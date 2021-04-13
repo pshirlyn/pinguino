@@ -1,2 +1,2 @@
 # Pinguino
-pshirlyn@gmail.com
+A low latency fault-tolerant distributed game framework
