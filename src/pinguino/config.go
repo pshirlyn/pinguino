@@ -16,8 +16,8 @@ import (
 	"sync"
 	"testing"
 
-	"6.824/labgob"
-	"6.824/labrpc"
+	"labgob"
+	"labrpc"
 
 	crand "crypto/rand"
 	"encoding/base64"
@@ -41,17 +41,19 @@ func makeSeed() int64 {
 }
 
 type config struct {
-	mu        sync.Mutex
-	t         *testing.T
-	net       *labrpc.Network
-	n         int
-	rafts     []*Raft
-	applyErr  []string // from apply channel readers
-	connected []bool   // whether each server is on the net
-	saved     []*Persister
-	endnames  [][]string            // the port file names each sends to
-	logs      []map[int]interface{} // copy of each server's committed entries
-	start     time.Time             // time at which make_config() was called
+	mu  sync.Mutex
+	t   *testing.T
+	net *labrpc.Network
+	n   int
+	// rafts     []*Raft
+	coordinator *Coordinator
+	workers     []*Worker
+	applyErr    []string // from apply channel readers
+	connected   []bool   // whether each server is on the net
+	saved       []*Persister
+	endnames    [][]string            // the port file names each sends to
+	logs        []map[int]interface{} // copy of each server's committed entries
+	start       time.Time             // time at which make_config() was called
 	// begin()/end() statistics
 	t0        time.Time // time at which test_test.go called cfg.begin()
 	rpcs0     int       // rpcTotal() at start of test
@@ -63,7 +65,7 @@ type config struct {
 
 var ncpu_once sync.Once
 
-func make_config(t *testing.T, n int, unreliable bool, snapshot bool) *config {
+func make_config(t *testing.T, nworkers int, unreliable bool) *config {
 	ncpu_once.Do(func() {
 		if runtime.NumCPU() < 2 {
 			fmt.Printf("warning: only one CPU, which may conceal locking bugs\n")
@@ -74,9 +76,10 @@ func make_config(t *testing.T, n int, unreliable bool, snapshot bool) *config {
 	cfg := &config{}
 	cfg.t = t
 	cfg.net = labrpc.MakeNetwork()
-	cfg.n = n
+	// Extra 1 for the coordinator
+	cfg.n = nworkers + 1
 	cfg.applyErr = make([]string, cfg.n)
-	cfg.rafts = make([]*Raft, cfg.n)
+	cfg.workers = make([]*Worker, nworkers)
 	cfg.connected = make([]bool, cfg.n)
 	cfg.saved = make([]*Persister, cfg.n)
 	cfg.endnames = make([][]string, cfg.n)
@@ -88,11 +91,14 @@ func make_config(t *testing.T, n int, unreliable bool, snapshot bool) *config {
 	cfg.net.LongDelays(true)
 
 	applier := cfg.applier
-	if snapshot {
-		applier = cfg.applierSnap
-	}
-	// create a full set of Rafts.
-	for i := 0; i < cfg.n; i++ {
+
+	// create a Coordinator.
+	cfg.logs[0] = map[int]interface{}{}
+	// cfg.start1(0, applier)
+	cfg.coordinator = MakeCoordinator(0)
+
+	// create a full set of Workers.
+	for i := 1; i <= nworkers; i++ {
 		cfg.logs[i] = map[int]interface{}{}
 		cfg.start1(i, applier)
 	}
@@ -121,12 +127,12 @@ func (cfg *config) crash1(i int) {
 		cfg.saved[i] = cfg.saved[i].Copy()
 	}
 
-	rf := cfg.rafts[i]
-	if rf != nil {
+	wk := cfg.workers[i]
+	if wk != nil {
 		cfg.mu.Unlock()
-		rf.Kill()
+		wk.Kill()
 		cfg.mu.Lock()
-		cfg.rafts[i] = nil
+		cfg.workers[i] = nil
 	}
 
 	if cfg.saved[i] != nil {
@@ -135,25 +141,6 @@ func (cfg *config) crash1(i int) {
 		cfg.saved[i] = &Persister{}
 		cfg.saved[i].SaveStateAndSnapshot(raftlog, snapshot)
 	}
-}
-
-func (cfg *config) checkLogs(i int, m ApplyMsg) (string, bool) {
-	err_msg := ""
-	v := m.Command
-	for j := 0; j < len(cfg.logs); j++ {
-		if old, oldok := cfg.logs[j][m.CommandIndex]; oldok && old != v {
-			log.Printf("%v: log %v; server %v\n", i, cfg.logs[i], cfg.logs[j])
-			// some server has already committed a different value for this entry!
-			err_msg = fmt.Sprintf("commit index=%v server=%v %v != server=%v %v",
-				m.CommandIndex, i, m.Command, j, old)
-		}
-	}
-	_, prevok := cfg.logs[i][m.CommandIndex-1]
-	cfg.logs[i][m.CommandIndex] = v
-	if m.CommandIndex > cfg.maxIndex {
-		cfg.maxIndex = m.CommandIndex
-	}
-	return err_msg, prevok
 }
 
 // applier reads message from apply ch and checks that they match the log
@@ -235,7 +222,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 }
 
 //
-// start or re-start a Raft.
+// start or re-start a Worker.
 // if one already exists, "kill" it first.
 // allocate new outgoing port file names, and a new
 // state persister, to isolate previous instance of
@@ -274,10 +261,15 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 
 	applyCh := make(chan ApplyMsg)
 
-	rf := Make(ends, i, cfg.saved[i], applyCh)
-
 	cfg.mu.Lock()
-	cfg.rafts[i] = rf
+	if i == 0 {
+		coordinator := MakeCoordinator(i)
+		cfg.coordinator = coordinator
+
+	} else {
+		worker := MakeWorker()
+		cfg.workers[i] = worker
+	}
 	cfg.mu.Unlock()
 
 	go applier(i, applyCh)
