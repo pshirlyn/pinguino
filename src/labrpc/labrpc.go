@@ -49,15 +49,17 @@ package labrpc
 //   pass svc to srv.AddService()
 //
 
-import "6.824/labgob"
-import "bytes"
-import "reflect"
-import "sync"
-import "log"
-import "strings"
-import "math/rand"
-import "time"
-import "sync/atomic"
+import (
+	"bytes"
+	"log"
+	"math/rand"
+	"pinguino/src/labgob"
+	"reflect"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+)
 
 type reqMsg struct {
 	endname  interface{} // name of sending ClientEnd
