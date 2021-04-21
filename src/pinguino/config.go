@@ -1,20 +1,28 @@
 package pinguino
 
+//
+// support for Raft tester.
+//
+// we will use the original config.go to test your code for grading.
+// so, while you can modify this code to help you debug, please
+// test with the original before submitting.
+//
+
 import (
-	"os"
+	"bytes"
+	"log"
+	"math/rand"
+	"runtime"
+	"sync"
 	"testing"
 
-	"pinguino/labrpc"
+	"6.824/labgob"
+	"6.824/labrpc"
 
-	// import "log"
 	crand "crypto/rand"
 	"encoding/base64"
 	"fmt"
 	"math/big"
-	"math/rand"
-	"runtime"
-	"strconv"
-	"sync"
 	"time"
 )
 
@@ -32,41 +40,252 @@ func makeSeed() int64 {
 	return x
 }
 
-// Randomize server handles
-func random_handles(kvh []*labrpc.ClientEnd) []*labrpc.ClientEnd {
-	sa := make([]*labrpc.ClientEnd, len(kvh))
-	copy(sa, kvh)
-	for i := range sa {
-		j := rand.Intn(i + 1)
-		sa[i], sa[j] = sa[j], sa[i]
-	}
-	return sa
-}
-
-type group struct {
-	gid       int
-	servers   []*ShardKV
-	endnames  [][]string
-	mendnames [][]string
-}
-
 type config struct {
-	mu    sync.Mutex
-	t     *testing.T
-	net   *labrpc.Network
-	start time.Time // time at which make_config() was called
+	mu        sync.Mutex
+	t         *testing.T
+	net       *labrpc.Network
+	n         int
+	rafts     []*Raft
+	applyErr  []string // from apply channel readers
+	connected []bool   // whether each server is on the net
+	saved     []*Persister
+	endnames  [][]string            // the port file names each sends to
+	logs      []map[int]interface{} // copy of each server's committed entries
+	start     time.Time             // time at which make_config() was called
+	// begin()/end() statistics
+	t0        time.Time // time at which test_test.go called cfg.begin()
+	rpcs0     int       // rpcTotal() at start of test
+	cmds0     int       // number of agreements
+	bytes0    int64
+	maxIndex  int
+	maxIndex0 int
+}
 
-	nctrlers      int
-	ctrlerservers []*shardctrler.ShardCtrler
-	mck           *shardctrler.Clerk
+var ncpu_once sync.Once
 
-	ngroups int
-	n       int // servers per k/v group
-	groups  []*group
+func make_config(t *testing.T, n int, unreliable bool, snapshot bool) *config {
+	ncpu_once.Do(func() {
+		if runtime.NumCPU() < 2 {
+			fmt.Printf("warning: only one CPU, which may conceal locking bugs\n")
+		}
+		rand.Seed(makeSeed())
+	})
+	runtime.GOMAXPROCS(4)
+	cfg := &config{}
+	cfg.t = t
+	cfg.net = labrpc.MakeNetwork()
+	cfg.n = n
+	cfg.applyErr = make([]string, cfg.n)
+	cfg.rafts = make([]*Raft, cfg.n)
+	cfg.connected = make([]bool, cfg.n)
+	cfg.saved = make([]*Persister, cfg.n)
+	cfg.endnames = make([][]string, cfg.n)
+	cfg.logs = make([]map[int]interface{}, cfg.n)
+	cfg.start = time.Now()
 
-	clerks       map[*Clerk][]string
-	nextClientId int
-	maxraftstate int
+	cfg.setunreliable(unreliable)
+
+	cfg.net.LongDelays(true)
+
+	applier := cfg.applier
+	if snapshot {
+		applier = cfg.applierSnap
+	}
+	// create a full set of Rafts.
+	for i := 0; i < cfg.n; i++ {
+		cfg.logs[i] = map[int]interface{}{}
+		cfg.start1(i, applier)
+	}
+
+	// connect everyone
+	for i := 0; i < cfg.n; i++ {
+		cfg.connect(i)
+	}
+
+	return cfg
+}
+
+// shut down a Raft server but save its persistent state.
+func (cfg *config) crash1(i int) {
+	cfg.disconnect(i)
+	cfg.net.DeleteServer(i) // disable client connections to the server.
+
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+
+	// a fresh persister, in case old instance
+	// continues to update the Persister.
+	// but copy old persister's content so that we always
+	// pass Make() the last persisted state.
+	if cfg.saved[i] != nil {
+		cfg.saved[i] = cfg.saved[i].Copy()
+	}
+
+	rf := cfg.rafts[i]
+	if rf != nil {
+		cfg.mu.Unlock()
+		rf.Kill()
+		cfg.mu.Lock()
+		cfg.rafts[i] = nil
+	}
+
+	if cfg.saved[i] != nil {
+		raftlog := cfg.saved[i].ReadRaftState()
+		snapshot := cfg.saved[i].ReadSnapshot()
+		cfg.saved[i] = &Persister{}
+		cfg.saved[i].SaveStateAndSnapshot(raftlog, snapshot)
+	}
+}
+
+func (cfg *config) checkLogs(i int, m ApplyMsg) (string, bool) {
+	err_msg := ""
+	v := m.Command
+	for j := 0; j < len(cfg.logs); j++ {
+		if old, oldok := cfg.logs[j][m.CommandIndex]; oldok && old != v {
+			log.Printf("%v: log %v; server %v\n", i, cfg.logs[i], cfg.logs[j])
+			// some server has already committed a different value for this entry!
+			err_msg = fmt.Sprintf("commit index=%v server=%v %v != server=%v %v",
+				m.CommandIndex, i, m.Command, j, old)
+		}
+	}
+	_, prevok := cfg.logs[i][m.CommandIndex-1]
+	cfg.logs[i][m.CommandIndex] = v
+	if m.CommandIndex > cfg.maxIndex {
+		cfg.maxIndex = m.CommandIndex
+	}
+	return err_msg, prevok
+}
+
+// applier reads message from apply ch and checks that they match the log
+// contents
+func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
+	for m := range applyCh {
+		if m.CommandValid == false {
+			// ignore other types of ApplyMsg
+		} else {
+			cfg.mu.Lock()
+			err_msg, prevok := cfg.checkLogs(i, m)
+			cfg.mu.Unlock()
+			if m.CommandIndex > 1 && prevok == false {
+				err_msg = fmt.Sprintf("server %v apply out of order %v", i, m.CommandIndex)
+			}
+			if err_msg != "" {
+				log.Fatalf("apply error: %v\n", err_msg)
+				cfg.applyErr[i] = err_msg
+				// keep reading after error so that Raft doesn't block
+				// holding locks...
+			}
+		}
+	}
+}
+
+const SnapShotInterval = 10
+
+// periodically snapshot raft state
+func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
+	lastApplied := 0
+	for m := range applyCh {
+		if m.SnapshotValid {
+			//DPrintf("Installsnapshot %v %v\n", m.SnapshotIndex, lastApplied)
+			cfg.mu.Lock()
+			if cfg.rafts[i].CondInstallSnapshot(m.SnapshotTerm,
+				m.SnapshotIndex, m.Snapshot) {
+				cfg.logs[i] = make(map[int]interface{})
+				r := bytes.NewBuffer(m.Snapshot)
+				d := labgob.NewDecoder(r)
+				var v int
+				if d.Decode(&v) != nil {
+					log.Fatalf("decode error\n")
+				}
+				cfg.logs[i][m.SnapshotIndex] = v
+				lastApplied = m.SnapshotIndex
+			}
+			cfg.mu.Unlock()
+		} else if m.CommandValid && m.CommandIndex > lastApplied {
+			//DPrintf("apply %v lastApplied %v\n", m.CommandIndex, lastApplied)
+			cfg.mu.Lock()
+			err_msg, prevok := cfg.checkLogs(i, m)
+			cfg.mu.Unlock()
+			if m.CommandIndex > 1 && prevok == false {
+				err_msg = fmt.Sprintf("server %v apply out of order %v", i, m.CommandIndex)
+			}
+			if err_msg != "" {
+				log.Fatalf("apply error: %v\n", err_msg)
+				cfg.applyErr[i] = err_msg
+				// keep reading after error so that Raft doesn't block
+				// holding locks...
+			}
+			lastApplied = m.CommandIndex
+			if (m.CommandIndex+1)%SnapShotInterval == 0 {
+				w := new(bytes.Buffer)
+				e := labgob.NewEncoder(w)
+				v := m.Command
+				e.Encode(v)
+				cfg.rafts[i].Snapshot(m.CommandIndex, w.Bytes())
+			}
+		} else {
+			// Ignore other types of ApplyMsg or old
+			// commands. Old command may never happen,
+			// depending on the Raft implementation, but
+			// just in case.
+			// DPrintf("Ignore: Index %v lastApplied %v\n", m.CommandIndex, lastApplied)
+
+		}
+	}
+}
+
+//
+// start or re-start a Raft.
+// if one already exists, "kill" it first.
+// allocate new outgoing port file names, and a new
+// state persister, to isolate previous instance of
+// this server. since we cannot really kill it.
+//
+func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
+	cfg.crash1(i)
+
+	// a fresh set of outgoing ClientEnd names.
+	// so that old crashed instance's ClientEnds can't send.
+	cfg.endnames[i] = make([]string, cfg.n)
+	for j := 0; j < cfg.n; j++ {
+		cfg.endnames[i][j] = randstring(20)
+	}
+
+	// a fresh set of ClientEnds.
+	ends := make([]*labrpc.ClientEnd, cfg.n)
+	for j := 0; j < cfg.n; j++ {
+		ends[j] = cfg.net.MakeEnd(cfg.endnames[i][j])
+		cfg.net.Connect(cfg.endnames[i][j], j)
+	}
+
+	cfg.mu.Lock()
+
+	// a fresh persister, so old instance doesn't overwrite
+	// new instance's persisted state.
+	// but copy old persister's content so that we always
+	// pass Make() the last persisted state.
+	if cfg.saved[i] != nil {
+		cfg.saved[i] = cfg.saved[i].Copy()
+	} else {
+		cfg.saved[i] = MakePersister()
+	}
+
+	cfg.mu.Unlock()
+
+	applyCh := make(chan ApplyMsg)
+
+	rf := Make(ends, i, cfg.saved[i], applyCh)
+
+	cfg.mu.Lock()
+	cfg.rafts[i] = rf
+	cfg.mu.Unlock()
+
+	go applier(i, applyCh)
+
+	svc := labrpc.MakeService(rf)
+	srv := labrpc.MakeServer()
+	srv.AddService(svc)
+	cfg.net.AddServer(i, srv)
 }
 
 func (cfg *config) checkTimeout() {
@@ -77,306 +296,301 @@ func (cfg *config) checkTimeout() {
 }
 
 func (cfg *config) cleanup() {
-	for gi := 0; gi < cfg.ngroups; gi++ {
-		cfg.ShutdownGroup(gi)
-	}
-	for i := 0; i < cfg.nctrlers; i++ {
-		cfg.ctrlerservers[i].Kill()
+	for i := 0; i < len(cfg.rafts); i++ {
+		if cfg.rafts[i] != nil {
+			cfg.rafts[i].Kill()
+		}
 	}
 	cfg.net.Cleanup()
 	cfg.checkTimeout()
 }
 
-// check that no server's log is too big.
-func (cfg *config) checklogs() {
-	for gi := 0; gi < cfg.ngroups; gi++ {
+// attach server i to the net.
+func (cfg *config) connect(i int) {
+	// fmt.Printf("connect(%d)\n", i)
+
+	cfg.connected[i] = true
+
+	// outgoing ClientEnds
+	for j := 0; j < cfg.n; j++ {
+		if cfg.connected[j] {
+			endname := cfg.endnames[i][j]
+			cfg.net.Enable(endname, true)
+		}
+	}
+
+	// incoming ClientEnds
+	for j := 0; j < cfg.n; j++ {
+		if cfg.connected[j] {
+			endname := cfg.endnames[j][i]
+			cfg.net.Enable(endname, true)
+		}
+	}
+}
+
+// detach server i from the net.
+func (cfg *config) disconnect(i int) {
+	// fmt.Printf("disconnect(%d)\n", i)
+
+	cfg.connected[i] = false
+
+	// outgoing ClientEnds
+	for j := 0; j < cfg.n; j++ {
+		if cfg.endnames[i] != nil {
+			endname := cfg.endnames[i][j]
+			cfg.net.Enable(endname, false)
+		}
+	}
+
+	// incoming ClientEnds
+	for j := 0; j < cfg.n; j++ {
+		if cfg.endnames[j] != nil {
+			endname := cfg.endnames[j][i]
+			cfg.net.Enable(endname, false)
+		}
+	}
+}
+
+func (cfg *config) rpcCount(server int) int {
+	return cfg.net.GetCount(server)
+}
+
+func (cfg *config) rpcTotal() int {
+	return cfg.net.GetTotalCount()
+}
+
+func (cfg *config) setunreliable(unrel bool) {
+	cfg.net.Reliable(!unrel)
+}
+
+func (cfg *config) bytesTotal() int64 {
+	return cfg.net.GetTotalBytes()
+}
+
+func (cfg *config) setlongreordering(longrel bool) {
+	cfg.net.LongReordering(longrel)
+}
+
+// check that there's exactly one leader.
+// try a few times in case re-elections are needed.
+func (cfg *config) checkOneLeader() int {
+	for iters := 0; iters < 10; iters++ {
+		ms := 450 + (rand.Int63() % 100)
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+
+		leaders := make(map[int][]int)
 		for i := 0; i < cfg.n; i++ {
-			raft := cfg.groups[gi].saved[i].RaftStateSize()
-			snap := len(cfg.groups[gi].saved[i].ReadSnapshot())
-			if cfg.maxraftstate >= 0 && raft > 8*cfg.maxraftstate {
-				cfg.t.Fatalf("persister.RaftStateSize() %v, but maxraftstate %v",
-					raft, cfg.maxraftstate)
+			if cfg.connected[i] {
+				if term, leader := cfg.rafts[i].GetState(); leader {
+					leaders[term] = append(leaders[term], i)
+				}
 			}
-			if cfg.maxraftstate < 0 && snap > 0 {
-				cfg.t.Fatalf("maxraftstate is -1, but snapshot is non-empty!")
+		}
+
+		lastTermWithLeader := -1
+		for term, leaders := range leaders {
+			if len(leaders) > 1 {
+				cfg.t.Fatalf("term %d has %d (>1) leaders", term, len(leaders))
+			}
+			if term > lastTermWithLeader {
+				lastTermWithLeader = term
+			}
+		}
+
+		if len(leaders) != 0 {
+			return leaders[lastTermWithLeader][0]
+		}
+	}
+	cfg.t.Fatalf("expected one leader, got none")
+	return -1
+}
+
+// check that everyone agrees on the term.
+func (cfg *config) checkTerms() int {
+	term := -1
+	for i := 0; i < cfg.n; i++ {
+		if cfg.connected[i] {
+			xterm, _ := cfg.rafts[i].GetState()
+			if term == -1 {
+				term = xterm
+			} else if term != xterm {
+				cfg.t.Fatalf("servers disagree on term")
+			}
+		}
+	}
+	return term
+}
+
+// check that there's no leader
+func (cfg *config) checkNoLeader() {
+	for i := 0; i < cfg.n; i++ {
+		if cfg.connected[i] {
+			_, is_leader := cfg.rafts[i].GetState()
+			if is_leader {
+				cfg.t.Fatalf("expected no leader, but %v claims to be leader", i)
 			}
 		}
 	}
 }
 
-// controler server name for labrpc.
-func (cfg *config) ctrlername(i int) string {
-	return "ctrler" + strconv.Itoa(i)
-}
+// how many servers think a log entry is committed?
+func (cfg *config) nCommitted(index int) (int, interface{}) {
+	count := 0
+	var cmd interface{} = nil
+	for i := 0; i < len(cfg.rafts); i++ {
+		if cfg.applyErr[i] != "" {
+			cfg.t.Fatal(cfg.applyErr[i])
+		}
 
-// shard server name for labrpc.
-// i'th server of group gid.
-func (cfg *config) servername(gid int, i int) string {
-	return "server-" + strconv.Itoa(gid) + "-" + strconv.Itoa(i)
-}
-
-func (cfg *config) makeClient() *Clerk {
-	cfg.mu.Lock()
-	defer cfg.mu.Unlock()
-
-	// ClientEnds to talk to controler service.
-	ends := make([]*labrpc.ClientEnd, cfg.nctrlers)
-	endnames := make([]string, cfg.n)
-	for j := 0; j < cfg.nctrlers; j++ {
-		endnames[j] = randstring(20)
-		ends[j] = cfg.net.MakeEnd(endnames[j])
-		cfg.net.Connect(endnames[j], cfg.ctrlername(j))
-		cfg.net.Enable(endnames[j], true)
-	}
-
-	ck := MakeClerk(ends, func(servername string) *labrpc.ClientEnd {
-		name := randstring(20)
-		end := cfg.net.MakeEnd(name)
-		cfg.net.Connect(name, servername)
-		cfg.net.Enable(name, true)
-		return end
-	})
-	cfg.clerks[ck] = endnames
-	cfg.nextClientId++
-	return ck
-}
-
-func (cfg *config) deleteClient(ck *Clerk) {
-	cfg.mu.Lock()
-	defer cfg.mu.Unlock()
-
-	v := cfg.clerks[ck]
-	for i := 0; i < len(v); i++ {
-		os.Remove(v[i])
-	}
-	delete(cfg.clerks, ck)
-}
-
-// Shutdown i'th server of gi'th group, by isolating it
-func (cfg *config) ShutdownServer(gi int, i int) {
-	cfg.mu.Lock()
-	defer cfg.mu.Unlock()
-
-	gg := cfg.groups[gi]
-
-	// prevent this server from sending
-	for j := 0; j < len(gg.servers); j++ {
-		name := gg.endnames[i][j]
-		cfg.net.Enable(name, false)
-	}
-	for j := 0; j < len(gg.mendnames[i]); j++ {
-		name := gg.mendnames[i][j]
-		cfg.net.Enable(name, false)
-	}
-
-	// disable client connections to the server.
-	// it's important to do this before creating
-	// the new Persister in saved[i], to avoid
-	// the possibility of the server returning a
-	// positive reply to an Append but persisting
-	// the result in the superseded Persister.
-	cfg.net.DeleteServer(cfg.servername(gg.gid, i))
-
-	// a fresh persister, in case old instance
-	// continues to update the Persister.
-	// but copy old persister's content so that we always
-	// pass Make() the last persisted state.
-	if gg.saved[i] != nil {
-		gg.saved[i] = gg.saved[i].Copy()
-	}
-
-	kv := gg.servers[i]
-	if kv != nil {
-		cfg.mu.Unlock()
-		kv.Kill()
 		cfg.mu.Lock()
-		gg.servers[i] = nil
+		cmd1, ok := cfg.logs[i][index]
+		cfg.mu.Unlock()
+
+		if ok {
+			if count > 0 && cmd != cmd1 {
+				cfg.t.Fatalf("committed values do not match: index %v, %v, %v\n",
+					index, cmd, cmd1)
+			}
+			count += 1
+			cmd = cmd1
+		}
+	}
+	return count, cmd
+}
+
+// wait for at least n servers to commit.
+// but don't wait forever.
+func (cfg *config) wait(index int, n int, startTerm int) interface{} {
+	to := 10 * time.Millisecond
+	for iters := 0; iters < 30; iters++ {
+		nd, _ := cfg.nCommitted(index)
+		if nd >= n {
+			break
+		}
+		time.Sleep(to)
+		if to < time.Second {
+			to *= 2
+		}
+		if startTerm > -1 {
+			for _, r := range cfg.rafts {
+				if t, _ := r.GetState(); t > startTerm {
+					// someone has moved on
+					// can no longer guarantee that we'll "win"
+					return -1
+				}
+			}
+		}
+	}
+	nd, cmd := cfg.nCommitted(index)
+	if nd < n {
+		cfg.t.Fatalf("only %d decided for index %d; wanted %d\n",
+			nd, index, n)
+	}
+	return cmd
+}
+
+// do a complete agreement.
+// it might choose the wrong leader initially,
+// and have to re-submit after giving up.
+// entirely gives up after about 10 seconds.
+// indirectly checks that the servers agree on the
+// same value, since nCommitted() checks this,
+// as do the threads that read from applyCh.
+// returns index.
+// if retry==true, may submit the command multiple
+// times, in case a leader fails just after Start().
+// if retry==false, calls Start() only once, in order
+// to simplify the early Lab 2B tests.
+func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
+	t0 := time.Now()
+	starts := 0
+	for time.Since(t0).Seconds() < 10 {
+		// try all the servers, maybe one is the leader.
+		index := -1
+		for si := 0; si < cfg.n; si++ {
+			starts = (starts + 1) % cfg.n
+			var rf *Raft
+			cfg.mu.Lock()
+			if cfg.connected[starts] {
+				rf = cfg.rafts[starts]
+			}
+			cfg.mu.Unlock()
+			if rf != nil {
+				index1, _, ok := rf.Start(cmd)
+				if ok {
+					index = index1
+					break
+				}
+			}
+		}
+
+		if index != -1 {
+			// somebody claimed to be the leader and to have
+			// submitted our command; wait a while for agreement.
+			t1 := time.Now()
+			for time.Since(t1).Seconds() < 2 {
+				nd, cmd1 := cfg.nCommitted(index)
+				// fmt.Printf("#: %d I: %d\n", nd, index)
+				if nd > 0 && nd >= expectedServers {
+					// committed
+					if cmd1 == cmd {
+						// and it was the command we submitted.
+						return index
+					}
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if retry == false {
+				cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
+			}
+		} else {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
+	return -1
+}
+
+// start a Test.
+// print the Test message.
+// e.g. cfg.begin("Test (2B): RPC counts aren't too high")
+func (cfg *config) begin(description string) {
+	fmt.Printf("%s ...\n", description)
+	cfg.t0 = time.Now()
+	cfg.rpcs0 = cfg.rpcTotal()
+	cfg.bytes0 = cfg.bytesTotal()
+	cfg.cmds0 = 0
+	cfg.maxIndex0 = cfg.maxIndex
+}
+
+// end a Test -- the fact that we got here means there
+// was no failure.
+// print the Passed message,
+// and some performance numbers.
+func (cfg *config) end() {
+	cfg.checkTimeout()
+	if cfg.t.Failed() == false {
+		cfg.mu.Lock()
+		t := time.Since(cfg.t0).Seconds()       // real time
+		npeers := cfg.n                         // number of Raft peers
+		nrpc := cfg.rpcTotal() - cfg.rpcs0      // number of RPC sends
+		nbytes := cfg.bytesTotal() - cfg.bytes0 // number of bytes
+		ncmds := cfg.maxIndex - cfg.maxIndex0   // number of Raft agreements reported
+		cfg.mu.Unlock()
+
+		fmt.Printf("  ... Passed --")
+		fmt.Printf("  %4.1f  %d %4d %7d %4d\n", t, npeers, nrpc, nbytes, ncmds)
 	}
 }
 
-func (cfg *config) ShutdownGroup(gi int) {
+// Maximum log size across all servers
+func (cfg *config) LogSize() int {
+	logsize := 0
 	for i := 0; i < cfg.n; i++ {
-		cfg.ShutdownServer(gi, i)
-	}
-}
-
-// start i'th server in gi'th group
-func (cfg *config) StartServer(gi int, i int) {
-	cfg.mu.Lock()
-
-	gg := cfg.groups[gi]
-
-	// a fresh set of outgoing ClientEnd names
-	// to talk to other servers in this group.
-	gg.endnames[i] = make([]string, cfg.n)
-	for j := 0; j < cfg.n; j++ {
-		gg.endnames[i][j] = randstring(20)
-	}
-
-	// and the connections to other servers in this group.
-	ends := make([]*labrpc.ClientEnd, cfg.n)
-	for j := 0; j < cfg.n; j++ {
-		ends[j] = cfg.net.MakeEnd(gg.endnames[i][j])
-		cfg.net.Connect(gg.endnames[i][j], cfg.servername(gg.gid, j))
-		cfg.net.Enable(gg.endnames[i][j], true)
-	}
-
-	// ends to talk to shardctrler service
-	mends := make([]*labrpc.ClientEnd, cfg.nctrlers)
-	gg.mendnames[i] = make([]string, cfg.nctrlers)
-	for j := 0; j < cfg.nctrlers; j++ {
-		gg.mendnames[i][j] = randstring(20)
-		mends[j] = cfg.net.MakeEnd(gg.mendnames[i][j])
-		cfg.net.Connect(gg.mendnames[i][j], cfg.ctrlername(j))
-		cfg.net.Enable(gg.mendnames[i][j], true)
-	}
-
-	// a fresh persister, so old instance doesn't overwrite
-	// new instance's persisted state.
-	// give the fresh persister a copy of the old persister's
-	// state, so that the spec is that we pass StartKVServer()
-	// the last persisted state.
-	if gg.saved[i] != nil {
-		gg.saved[i] = gg.saved[i].Copy()
-	} else {
-		gg.saved[i] = raft.MakePersister()
-	}
-	cfg.mu.Unlock()
-
-	gg.servers[i] = StartServer(ends, i, gg.saved[i], cfg.maxraftstate,
-		gg.gid, mends,
-		func(servername string) *labrpc.ClientEnd {
-			name := randstring(20)
-			end := cfg.net.MakeEnd(name)
-			cfg.net.Connect(name, servername)
-			cfg.net.Enable(name, true)
-			return end
-		})
-
-	kvsvc := labrpc.MakeService(gg.servers[i])
-	rfsvc := labrpc.MakeService(gg.servers[i].rf)
-	srv := labrpc.MakeServer()
-	srv.AddService(kvsvc)
-	srv.AddService(rfsvc)
-	cfg.net.AddServer(cfg.servername(gg.gid, i), srv)
-}
-
-func (cfg *config) StartGroup(gi int) {
-	for i := 0; i < cfg.n; i++ {
-		cfg.StartServer(gi, i)
-	}
-}
-
-func (cfg *config) StartCtrlerserver(i int) {
-	// ClientEnds to talk to other controler replicas.
-	ends := make([]*labrpc.ClientEnd, cfg.nctrlers)
-	for j := 0; j < cfg.nctrlers; j++ {
-		endname := randstring(20)
-		ends[j] = cfg.net.MakeEnd(endname)
-		cfg.net.Connect(endname, cfg.ctrlername(j))
-		cfg.net.Enable(endname, true)
-	}
-
-	p := raft.MakePersister()
-
-	cfg.ctrlerservers[i] = shardctrler.StartServer(ends, i, p)
-
-	msvc := labrpc.MakeService(cfg.ctrlerservers[i])
-	rfsvc := labrpc.MakeService(cfg.ctrlerservers[i].Raft())
-	srv := labrpc.MakeServer()
-	srv.AddService(msvc)
-	srv.AddService(rfsvc)
-	cfg.net.AddServer(cfg.ctrlername(i), srv)
-}
-
-func (cfg *config) shardclerk() *shardctrler.Clerk {
-	// ClientEnds to talk to ctrler service.
-	ends := make([]*labrpc.ClientEnd, cfg.nctrlers)
-	for j := 0; j < cfg.nctrlers; j++ {
-		name := randstring(20)
-		ends[j] = cfg.net.MakeEnd(name)
-		cfg.net.Connect(name, cfg.ctrlername(j))
-		cfg.net.Enable(name, true)
-	}
-
-	return shardctrler.MakeClerk(ends)
-}
-
-// tell the shardctrler that a group is joining.
-func (cfg *config) join(gi int) {
-	cfg.joinm([]int{gi})
-}
-
-func (cfg *config) joinm(gis []int) {
-	m := make(map[int][]string, len(gis))
-	for _, g := range gis {
-		gid := cfg.groups[g].gid
-		servernames := make([]string, cfg.n)
-		for i := 0; i < cfg.n; i++ {
-			servernames[i] = cfg.servername(gid, i)
-		}
-		m[gid] = servernames
-	}
-	cfg.mck.Join(m)
-}
-
-// tell the shardctrler that a group is leaving.
-func (cfg *config) leave(gi int) {
-	cfg.leavem([]int{gi})
-}
-
-func (cfg *config) leavem(gis []int) {
-	gids := make([]int, 0, len(gis))
-	for _, g := range gis {
-		gids = append(gids, cfg.groups[g].gid)
-	}
-	cfg.mck.Leave(gids)
-}
-
-var ncpu_once sync.Once
-
-func make_config(t *testing.T, n int, unreliable bool, maxraftstate int) *config {
-	ncpu_once.Do(func() {
-		if runtime.NumCPU() < 2 {
-			fmt.Printf("warning: only one CPU, which may conceal locking bugs\n")
-		}
-		rand.Seed(makeSeed())
-	})
-	runtime.GOMAXPROCS(4)
-	cfg := &config{}
-	cfg.t = t
-	cfg.maxraftstate = maxraftstate
-	cfg.net = labrpc.MakeNetwork()
-	cfg.start = time.Now()
-
-	// controler
-	cfg.nctrlers = 3
-	cfg.ctrlerservers = make([]*shardctrler.ShardCtrler, cfg.nctrlers)
-	for i := 0; i < cfg.nctrlers; i++ {
-		cfg.StartCtrlerserver(i)
-	}
-	cfg.mck = cfg.shardclerk()
-
-	cfg.ngroups = 3
-	cfg.groups = make([]*group, cfg.ngroups)
-	cfg.n = n
-	for gi := 0; gi < cfg.ngroups; gi++ {
-		gg := &group{}
-		cfg.groups[gi] = gg
-		gg.gid = 100 + gi
-		gg.servers = make([]*ShardKV, cfg.n)
-		gg.saved = make([]*raft.Persister, cfg.n)
-		gg.endnames = make([][]string, cfg.n)
-		gg.mendnames = make([][]string, cfg.nctrlers)
-		for i := 0; i < cfg.n; i++ {
-			cfg.StartServer(gi, i)
+		n := cfg.saved[i].RaftStateSize()
+		if n > logsize {
+			logsize = n
 		}
 	}
-
-	cfg.clerks = make(map[*Clerk][]string)
-	cfg.nextClientId = cfg.n + 1000 // client ids start 1000 above the highest serverid
-
-	cfg.net.Reliable(!unreliable)
-
-	return cfg
+	return logsize
 }
