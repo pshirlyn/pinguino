@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"pinguino/labrpc"
 	"sync"
 )
 
 type Coordinator struct {
 	mu sync.Mutex
+	
 }
 
 //
@@ -27,4 +29,10 @@ func (c *Coordinator) server() {
 		log.Fatal("listen error:", e)
 	}
 	go http.Serve(l, nil)
+}
+
+func MakeCoordinator(peers []*labrpc.ClientEnd, me int) *Coordinator {
+	cr := &Coordinator{}
+
+	return cr
 }
