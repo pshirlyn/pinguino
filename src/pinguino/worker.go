@@ -2,9 +2,9 @@ package pinguino
 
 import (
 	"fmt"
-	"labrpc"
 	"log"
 	"net/rpc"
+	"pinguino/src/labrpc"
 	"sync"
 )
 

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
-	"pinguino/labrpc"
+	"pinguino/src/labrpc"
 	"sync"
 )
 

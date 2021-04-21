@@ -16,8 +16,8 @@ import (
 	"sync"
 	"testing"
 
-	"labgob"
-	"labrpc"
+	"pinguino/src/labgob"
+	"pinguino/src/labrpc"
 
 	crand "crypto/rand"
 	"encoding/base64"
