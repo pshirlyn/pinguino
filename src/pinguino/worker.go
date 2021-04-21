@@ -2,9 +2,9 @@ package pinguino
 
 import (
 	"fmt"
+	"labrpc"
 	"log"
 	"net/rpc"
-	"pinguino/labrpc"
 	"sync"
 )
 
@@ -30,13 +30,18 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	return false
 }
 
-func MakeWorker(coordinator *labrpc.ClientEnd, peers []*labrpc.ClientEnd, me int) *Worker {
+func SetPeers(peers []*labrpc.ClientEnd) {
+	worker.mu.Lock()
+	worker.peers = peers
+	worker.mu.Unlock()
+}
+
+func MakeWorker(coordinator *labrpc.ClientEnd, me int) *Worker {
 	worker := &Worker{}
 
 	worker.mu.Lock()
 	defer worker.mu.Unlock()
 
-	worker.peers = peers
 	worker.me = me
 
 	return worker
