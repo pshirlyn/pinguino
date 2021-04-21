@@ -9,8 +9,10 @@ import (
 )
 
 type Worker struct {
-	mu    sync.Mutex
+	mu sync.Mutex
+
 	peers []*labrpc.ClientEnd
+	me    int
 }
 
 func call(rpcname string, args interface{}, reply interface{}) bool {
