@@ -32,13 +32,16 @@ func (c *Coordinator) server() {
 	go http.Serve(l, nil)
 }
 
-func SetWorkers(workers []*labrpc.ClientEnd) {
-	cr.mu.Lock()
-	defer cr.mu.Unlock()
+func (c *Coordinator) Kill() {
+}
+
+func (c *Coordinator) SetWorkers(workers []*labrpc.ClientEnd) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	// TODO: add coordinator backup server reference here
 
-	cr.workers = workers
+	c.workers = workers
 }
 
 func MakeCoordinator() *Coordinator {

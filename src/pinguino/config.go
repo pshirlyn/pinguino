@@ -94,8 +94,7 @@ func make_config(t *testing.T, nworkers int, unreliable bool) *config {
 
 	// create a Coordinator.
 	cfg.logs[0] = map[int]interface{}{}
-	// cfg.start1(0, applier)
-	cfg.coordinator = MakeCoordinator(0)
+	cfg.start1(0, applier)
 
 	// create a full set of Workers.
 	for i := 1; i <= nworkers; i++ {
@@ -127,12 +126,25 @@ func (cfg *config) crash1(i int) {
 		cfg.saved[i] = cfg.saved[i].Copy()
 	}
 
-	wk := cfg.workers[i]
-	if wk != nil {
-		cfg.mu.Unlock()
-		wk.Kill()
-		cfg.mu.Lock()
-		cfg.workers[i] = nil
+	// Crash a coordinator
+	if i == 0 {
+		coordinator := cfg.coordinator
+		if coordinator != nil {
+			cfg.mu.Unlock()
+			coordinator.Kill()
+			cfg.mu.Lock()
+			cfg.coordinator = nil
+		}
+
+		// Crash a worker
+	} else {
+		wk := cfg.workers[i]
+		if wk != nil {
+			cfg.mu.Unlock()
+			wk.Kill()
+			cfg.mu.Lock()
+			cfg.workers[i] = nil
+		}
 	}
 
 	if cfg.saved[i] != nil {
@@ -263,18 +275,18 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 
 	cfg.mu.Lock()
 	if i == 0 {
-		coordinator := MakeCoordinator(i)
-		cfg.coordinator = coordinator
+		server := MakeCoordinator(i)
+		cfg.coordinator = server
 
 	} else {
-		worker := MakeWorker()
-		cfg.workers[i] = worker
+		server := MakeWorker()
+		cfg.workers[i] = server
 	}
 	cfg.mu.Unlock()
 
 	go applier(i, applyCh)
 
-	svc := labrpc.MakeService(rf)
+	svc := labrpc.MakeService(server)
 	srv := labrpc.MakeServer()
 	srv.AddService(svc)
 	cfg.net.AddServer(i, srv)
@@ -288,11 +300,18 @@ func (cfg *config) checkTimeout() {
 }
 
 func (cfg *config) cleanup() {
-	for i := 0; i < len(cfg.rafts); i++ {
-		if cfg.rafts[i] != nil {
-			cfg.rafts[i].Kill()
+	// Kill workers
+	for i := 0; i < len(cfg.workers); i++ {
+		if cfg.workers[i] != nil {
+			cfg.workers[i].Kill()
 		}
 	}
+
+	// Kill coordinator
+	if cfg.coordinator != nil {
+		cfg.coordinator.Kill()
+	}
+
 	cfg.net.Cleanup()
 	cfg.checkTimeout()
 }
@@ -361,93 +380,6 @@ func (cfg *config) bytesTotal() int64 {
 
 func (cfg *config) setlongreordering(longrel bool) {
 	cfg.net.LongReordering(longrel)
-}
-
-// check that there's exactly one leader.
-// try a few times in case re-elections are needed.
-func (cfg *config) checkOneLeader() int {
-	for iters := 0; iters < 10; iters++ {
-		ms := 450 + (rand.Int63() % 100)
-		time.Sleep(time.Duration(ms) * time.Millisecond)
-
-		leaders := make(map[int][]int)
-		for i := 0; i < cfg.n; i++ {
-			if cfg.connected[i] {
-				if term, leader := cfg.rafts[i].GetState(); leader {
-					leaders[term] = append(leaders[term], i)
-				}
-			}
-		}
-
-		lastTermWithLeader := -1
-		for term, leaders := range leaders {
-			if len(leaders) > 1 {
-				cfg.t.Fatalf("term %d has %d (>1) leaders", term, len(leaders))
-			}
-			if term > lastTermWithLeader {
-				lastTermWithLeader = term
-			}
-		}
-
-		if len(leaders) != 0 {
-			return leaders[lastTermWithLeader][0]
-		}
-	}
-	cfg.t.Fatalf("expected one leader, got none")
-	return -1
-}
-
-// check that everyone agrees on the term.
-func (cfg *config) checkTerms() int {
-	term := -1
-	for i := 0; i < cfg.n; i++ {
-		if cfg.connected[i] {
-			xterm, _ := cfg.rafts[i].GetState()
-			if term == -1 {
-				term = xterm
-			} else if term != xterm {
-				cfg.t.Fatalf("servers disagree on term")
-			}
-		}
-	}
-	return term
-}
-
-// check that there's no leader
-func (cfg *config) checkNoLeader() {
-	for i := 0; i < cfg.n; i++ {
-		if cfg.connected[i] {
-			_, is_leader := cfg.rafts[i].GetState()
-			if is_leader {
-				cfg.t.Fatalf("expected no leader, but %v claims to be leader", i)
-			}
-		}
-	}
-}
-
-// how many servers think a log entry is committed?
-func (cfg *config) nCommitted(index int) (int, interface{}) {
-	count := 0
-	var cmd interface{} = nil
-	for i := 0; i < len(cfg.rafts); i++ {
-		if cfg.applyErr[i] != "" {
-			cfg.t.Fatal(cfg.applyErr[i])
-		}
-
-		cfg.mu.Lock()
-		cmd1, ok := cfg.logs[i][index]
-		cfg.mu.Unlock()
-
-		if ok {
-			if count > 0 && cmd != cmd1 {
-				cfg.t.Fatalf("committed values do not match: index %v, %v, %v\n",
-					index, cmd, cmd1)
-			}
-			count += 1
-			cmd = cmd1
-		}
-	}
-	return count, cmd
 }
 
 // wait for at least n servers to commit.

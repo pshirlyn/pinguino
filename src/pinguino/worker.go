@@ -9,7 +9,8 @@ import (
 )
 
 type Worker struct {
-	mu sync.Mutex
+	mu    sync.Mutex
+	peers []*labrpc.ClientEnd
 }
 
 func call(rpcname string, args interface{}, reply interface{}) bool {
@@ -30,19 +31,22 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	return false
 }
 
-func SetPeers(peers []*labrpc.ClientEnd) {
-	worker.mu.Lock()
-	worker.peers = peers
-	worker.mu.Unlock()
+func (wk *Worker) Kill() {
+}
+
+func (wk *Worker) SetPeers(peers []*labrpc.ClientEnd) {
+	wk.mu.Lock()
+	wk.peers = peers
+	wk.mu.Unlock()
 }
 
 func MakeWorker(coordinator *labrpc.ClientEnd, me int) *Worker {
-	worker := &Worker{}
+	wk := &Worker{}
 
-	worker.mu.Lock()
-	defer worker.mu.Unlock()
+	wk.mu.Lock()
+	defer wk.mu.Unlock()
 
-	worker.me = me
+	wk.me = me
 
-	return worker
+	return wk
 }
