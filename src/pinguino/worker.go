@@ -33,5 +33,11 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 func MakeWorker(coordinator *labrpc.ClientEnd, peers []*labrpc.ClientEnd, me int) *Worker {
 	worker := &Worker{}
 
+	worker.mu.Lock()
+	defer worker.mu.Unlock()
+
+	worker.peers = peers
+	worker.me = me
+
 	return worker
 }

@@ -12,7 +12,8 @@ import (
 
 type Coordinator struct {
 	mu sync.Mutex
-	
+
+	workers []*labrpc.ClientEnd
 }
 
 //
@@ -31,8 +32,15 @@ func (c *Coordinator) server() {
 	go http.Serve(l, nil)
 }
 
-func MakeCoordinator(peers []*labrpc.ClientEnd, me int) *Coordinator {
+func MakeCoordinator(workers []*labrpc.ClientEnd) *Coordinator {
 	cr := &Coordinator{}
+
+	cr.mu.Lock()
+	defer cr.mu.Unlock()
+
+	// TODO: add coordinator backup server reference here
+
+	cr.workers = workers
 
 	return cr
 }
