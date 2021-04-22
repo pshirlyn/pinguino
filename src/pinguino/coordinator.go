@@ -65,6 +65,7 @@ func (c *Coordinator) SetWorkers(workers []*labrpc.ClientEnd) {
 	// TODO: add coordinator backup server reference here
 
 	// TODO: assign workers to region and set c.regionToWorkerMap
+	// Remember that workers[0] is set to be nil
 	c.workers = workers
 }
 

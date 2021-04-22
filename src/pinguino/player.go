@@ -48,6 +48,26 @@ func (pl *Player) sendFastMove(move interface{}) {
 	// TOOD: handle result of call
 }
 
+func (pl *Player) getRegionAssignment() {
+	pl.mu.Lock()
+	username := pl.username
+	pl.mu.Unlock()
+
+	args := AssignPlayerToRegionArgs{Username: username}
+	reply := AssignPlayerToRegionReply{}
+	ok := pl.coordinator.Call("Coordinator.AssignPlayerToRegion", &args, &reply)
+
+	// TODO: handle !ok and !reply.Success ?
+
+	if ok && reply.Success {
+		pl.mu.Lock()
+		defer pl.mu.Unlock()
+		pl.region = reply.Region
+		pl.serverIndex = reply.Worker
+	}
+
+}
+
 func MakePlayer(coordinator *labrpc.ClientEnd, servers []*labrpc.ClientEnd, username string) *Player {
 	pl := &Player{}
 
@@ -57,6 +77,8 @@ func MakePlayer(coordinator *labrpc.ClientEnd, servers []*labrpc.ClientEnd, user
 	pl.coordinator = coordinator
 	pl.servers = servers
 	pl.username = username
+
+	go pl.getRegionAssignment()
 
 	return pl
 }
