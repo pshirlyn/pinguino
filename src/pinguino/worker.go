@@ -44,19 +44,14 @@ func (wk *Worker) FastMove(args *FastMoveArgs, reply *FastMoveReply) {
 
 }
 
-func (wk *Worker) SetPeers(peers []*labrpc.ClientEnd) {
-	wk.mu.Lock()
-	wk.peers = peers
-	wk.mu.Unlock()
-}
-
-func MakeWorker(coordinator *labrpc.ClientEnd, me int) *Worker {
+func MakeWorker(coordinator *labrpc.ClientEnd, peers []*labrpc.ClientEnd, me int) *Worker {
 	wk := &Worker{}
 
 	wk.mu.Lock()
 	defer wk.mu.Unlock()
 
 	wk.me = me
+	wk.peers = peers
 
 	return wk
 }

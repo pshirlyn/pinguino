@@ -58,22 +58,26 @@ func (c *Coordinator) server() {
 func (c *Coordinator) Kill() {
 }
 
-func (c *Coordinator) SetWorkers(workers []*labrpc.ClientEnd) {
+func MakeCoordinator(workers []*labrpc.ClientEnd, nregions int) *Coordinator {
+	c := &Coordinator{}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	c.nRegions = nregions
 	// TODO: add coordinator backup server reference here
-
-	// TODO: assign workers to region and set c.regionToWorkerMap
-	// Remember that workers[0] is set to be nil
 	c.workers = workers
-}
 
-func MakeCoordinator(regions int) *Coordinator {
-	c := &Coordinator{}
-	c.nRegions = regions
 	c.playerToRegionMap = make(map[string]int)
 	c.regionToWorkerMap = make(map[int]int)
+
+	// Assign main worker to each region.
+	// TODO: handle cases where the number of regions != number of workers
+	// TODO: perhaps randomize the assignment
+	for i := 0; i < c.nRegions; i++ {
+		c.regionToWorkerMap[i] = i
+
+	}
 
 	return c
 }

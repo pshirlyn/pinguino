@@ -48,6 +48,14 @@ func (pl *Player) sendFastMove(move interface{}) {
 	// TOOD: handle result of call
 }
 
+// Checks whether the |pl.region| and |pl.serverIndex| has been assigned. This status check verifies whether the player is allowed to start sending moves.
+func (pl *Player) isAssigned() bool {
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+
+	return pl.region >= 0 && pl.serverIndex >= 0
+}
+
 func (pl *Player) getRegionAssignment() {
 	pl.mu.Lock()
 	username := pl.username
@@ -55,7 +63,14 @@ func (pl *Player) getRegionAssignment() {
 
 	args := AssignPlayerToRegionArgs{Username: username}
 	reply := AssignPlayerToRegionReply{}
-	ok := pl.coordinator.Call("Coordinator.AssignPlayerToRegion", &args, &reply)
+
+	ok := false
+	for i := 0; i < 10; i++ {
+		ok = pl.coordinator.Call("Coordinator.AssignPlayerToRegion", &args, &reply)
+		if ok && reply.Success {
+			break
+		}
+	}
 
 	// TODO: handle !ok and !reply.Success ?
 
@@ -77,6 +92,10 @@ func MakePlayer(coordinator *labrpc.ClientEnd, servers []*labrpc.ClientEnd, user
 	pl.coordinator = coordinator
 	pl.servers = servers
 	pl.username = username
+
+	// Temporary initialization
+	pl.region = -1
+	pl.serverIndex = -1
 
 	go pl.getRegionAssignment()
 
