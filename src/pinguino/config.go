@@ -264,12 +264,12 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 	cfg.mu.Lock()
 	var server interface{}
 	if i == 0 {
-		cr := MakeCoordinator(cfg.nregions)
+		cr := MakeCoordinator(ends[1:], cfg.nregions)
 		cfg.coordinator = cr
 		server = cr
 
 	} else {
-		wk := MakeWorker(ends[0], i)
+		wk := MakeWorker(ends[0], ends[1:], i)
 		cfg.workers[i] = wk
 		server = wk
 	}
@@ -281,6 +281,27 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 	srv := labrpc.MakeServer()
 	srv.AddService(svc)
 	cfg.net.AddServer(i, srv)
+}
+
+// Start a new player
+// TODO: keep track of started players to be able to re-start or "kill" it
+func (cfg *config) startPlayer(username string) *Player {
+	endnames := make([]string, cfg.nservers)
+	for j := 0; j < cfg.nservers; j++ {
+		endnames[j] = randstring(20)
+	}
+
+	ends := make([]*labrpc.ClientEnd, cfg.nservers)
+	for j := 0; j < cfg.nservers; j++ {
+		ends[j] = cfg.net.MakeEnd(endnames[j])
+		cfg.net.Connect(endnames[j], j)
+		cfg.net.Enable(endnames[j], true)
+	}
+
+	coordinatorEnd := ends[0]
+	workerEnds := ends[1:]
+
+	return MakePlayer(coordinatorEnd, workerEnds, username)
 }
 
 func (cfg *config) checkTimeout() {
