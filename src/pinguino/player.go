@@ -120,7 +120,7 @@ type ChatMessage struct {
 	Username string
 }
 
-func NewMove(x int, y int, username string) *Move {
+func newMove(x int, y int, username string) *Move {
 	move := Move{}
 	move.X = x
 	move.Y = y
@@ -128,8 +128,8 @@ func NewMove(x int, y int, username string) *Move {
 	return &move
 }
 
-func (pl *Player) move(x int, y int) {
-	playerMove := NewMove(x, y, pl.username)
+func (pl *Player) Move(x int, y int) {
+	playerMove := newMove(x, y, pl.username)
 
 	pl.sendFastMove(playerMove)
 }

@@ -264,7 +264,7 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 	cfg.mu.Lock()
 	var server interface{}
 	if i == 0 {
-		cr := MakeCoordinator(ends[1:], cfg.nregions)
+		cr := MakeCoordinator(cfg.nregions)
 		cfg.coordinator = cr
 		server = cr
 

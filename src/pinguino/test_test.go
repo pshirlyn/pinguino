@@ -47,3 +47,19 @@ func TestInitalizePlayer(t *testing.T) {
 	cfg.end()
 
 }
+
+func TestBasicSend(t *testing.T) {
+	servers := 5
+	regions := 5
+	reliable := false
+
+	cfg := make_config(t, servers, regions, reliable)
+	defer cfg.cleanup()
+
+	cfg.begin("TestBasicSend: Can send messages")
+
+	player0 := cfg.startPlayer("player0")
+	player0.Move(1, 1)
+
+	cfg.end()
+}

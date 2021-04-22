@@ -73,6 +73,7 @@ func MakeCoordinator(workers []*labrpc.ClientEnd, nregions int) *Coordinator {
 	c.nRegions = nregions
 	// TODO: add coordinator backup server reference here
 	c.workers = workers
+}
 
 func (c *Coordinator) sendHeartbeatToWorker(worker *labrpc.ClientEnd, args *HeartbeatArgs, reply *HeartbeatReply) {
 	ok := worker.Call("Worker.Heartbeat", &args, &reply)
@@ -92,7 +93,7 @@ func (c *Coordinator) SendHeartbeats() {
 }
 
 func (c *Coordinator) run() {
-	// main loop 
+	// main loop
 	for !c.killed {
 		c.SendHeartbeats()
 		time.Sleep(10 * time.Millisecond)
