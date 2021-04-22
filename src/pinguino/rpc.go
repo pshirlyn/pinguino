@@ -6,7 +6,9 @@ import (
 )
 
 type StableMoveArgs struct {
-	Move interface{}
+	Move     interface{}
+	Username string
+	Region   int
 }
 
 type StableMoveReply struct {
@@ -14,7 +16,9 @@ type StableMoveReply struct {
 }
 
 type FastMoveArgs struct {
-	Move interface{}
+	Move     interface{}
+	Username string
+	Region   int
 }
 
 type FastMoveReply struct {
