@@ -10,6 +10,7 @@ type StableMoveArgs struct {
 }
 
 type StableMoveReply struct {
+	Success bool
 }
 
 type FastMoveArgs struct {
@@ -17,6 +18,17 @@ type FastMoveArgs struct {
 }
 
 type FastMoveReply struct {
+	Success bool
+}
+
+type HeartbeatArgs struct {
+	AddedPlayers []string
+}
+
+type HeartbeatReply struct {
+	// report players who left
+	Success             bool
+	DisconnectedPlayers []string
 }
 
 // Cook up a unique-ish UNIX-domain socket name

@@ -96,6 +96,11 @@ type Move struct {
 	Username string
 }
 
+type ChatMessage struct {
+	Message  string
+	Username string
+}
+
 func NewMove(x int, y int, username string) *Move {
 	move := Move{}
 	move.X = x
@@ -109,3 +114,7 @@ func (pl *Player) move(x int, y int) {
 
 	pl.sendFastMove(playerMove)
 }
+
+// func (pl *Player) sendChatMessage(message string) {
+// 	playerMove := NewMove(message,
+// }
