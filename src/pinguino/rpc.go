@@ -14,3 +14,13 @@ func coordinatorSock() string {
 	s += strconv.Itoa(os.Getuid())
 	return s
 }
+
+type AssignPlayerToRegionArgs struct {
+	Username string
+}
+
+type AssignPlayerToRegionReply struct {
+	Success bool
+	Region  int
+	Worker  int
+}
