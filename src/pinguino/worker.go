@@ -38,6 +38,10 @@ func (wk *Worker) FastMove(args *FastMoveArgs, reply *FastMoveReply) {
 
 }
 
+func (wk *Worker) Heartbeat(args *HeartbeatArgs, reply *HeartbeatReply) {
+
+}
+
 func call(rpcname string, args interface{}, reply interface{}) bool {
 	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
 	sockname := coordinatorSock()
