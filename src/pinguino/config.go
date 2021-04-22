@@ -283,6 +283,27 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 	cfg.net.AddServer(i, srv)
 }
 
+// Start a new player
+// TODO: keep track of started players to be able to re-start or "kill" it
+func (cfg *config) startPlayer(username string) *Player {
+	endnames := make([]string, cfg.nservers)
+	for j := 0; j < cfg.nservers; j++ {
+		endnames[j] = randstring(20)
+	}
+
+	ends := make([]*labrpc.ClientEnd, cfg.nservers)
+	for j := 0; j < cfg.nservers; j++ {
+		ends[j] = cfg.net.MakeEnd(endnames[j])
+		cfg.net.Connect(endnames[j], j)
+		cfg.net.Enable(endnames[j], true)
+	}
+
+	coordinatorEnd := ends[0]
+	workerEnds := ends[1:]
+
+	return MakePlayer(coordinatorEnd, workerEnds, username)
+}
+
 func (cfg *config) checkTimeout() {
 	// enforce a two minute real-time limit on each test
 	if !cfg.t.Failed() && time.Since(cfg.start) > 120*time.Second {
