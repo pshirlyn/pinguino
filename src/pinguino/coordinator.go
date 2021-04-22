@@ -2,6 +2,7 @@ package pinguino
 
 import (
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -13,7 +14,29 @@ import (
 type Coordinator struct {
 	mu sync.Mutex
 
-	workers []*labrpc.ClientEnd
+	nRegions          int
+	workers           []*labrpc.ClientEnd
+	playerToRegionMap map[string]int
+	regionToWorkerMap map[int]int
+}
+
+// Used to pick a region to assign to players.
+// For now, pick the region randomly. In the future, consider load balancing.
+func (c *Coordinator) pickRegion() int {
+	return rand.Intn(c.nRegions)
+}
+
+func (c *Coordinator) AssignPlayerToRegion(args *AssignPlayerToRegionArgs, reply *AssignPlayerToRegionReply) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	username := args.Username
+	region := c.pickRegion()
+	c.playerToRegionMap[username] = region
+
+	reply.Success = true
+	reply.Region = region
+	reply.Worker = c.regionToWorkerMap[region]
 }
 
 //
@@ -41,11 +64,15 @@ func (c *Coordinator) SetWorkers(workers []*labrpc.ClientEnd) {
 
 	// TODO: add coordinator backup server reference here
 
+	// TODO: assign workers to region and set c.regionToWorkerMap
 	c.workers = workers
 }
 
-func MakeCoordinator() *Coordinator {
-	cr := &Coordinator{}
+func MakeCoordinator(regions int) *Coordinator {
+	c := &Coordinator{}
+	c.nRegions = regions
+	c.playerToRegionMap = make(map[string]int)
+	c.regionToWorkerMap = make(map[int]int)
 
-	return cr
+	return c
 }

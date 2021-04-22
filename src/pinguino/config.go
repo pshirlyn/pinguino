@@ -44,7 +44,8 @@ type config struct {
 	mu          sync.Mutex
 	t           *testing.T
 	net         *labrpc.Network
-	n           int // total count of workers + coordinator
+	nservers    int // total count of workers + coordinator
+	nregions    int
 	coordinator *Coordinator
 
 	// An n-th length array with 0th index as nil and 1 to n-1 indices containing a pointer to a worker. This is to allow the coordinator to be represented as server 0 while workers are servers 1 to n.
@@ -67,7 +68,7 @@ type config struct {
 
 var ncpu_once sync.Once
 
-func make_config(t *testing.T, nworkers int, unreliable bool) *config {
+func make_config(t *testing.T, nworkers int, nregions int, unreliable bool) *config {
 	ncpu_once.Do(func() {
 		if runtime.NumCPU() < 2 {
 			fmt.Printf("warning: only one CPU, which may conceal locking bugs\n")
@@ -79,13 +80,14 @@ func make_config(t *testing.T, nworkers int, unreliable bool) *config {
 	cfg.t = t
 	cfg.net = labrpc.MakeNetwork()
 	// Extra 1 for the coordinator
-	cfg.n = nworkers + 1
-	cfg.applyErr = make([]string, cfg.n)
-	cfg.workers = make([]*Worker, cfg.n)
-	cfg.connected = make([]bool, cfg.n)
+	cfg.nservers = nworkers + 1
+	cfg.nregions = nregions
+	cfg.applyErr = make([]string, cfg.nservers)
+	cfg.workers = make([]*Worker, cfg.nservers)
+	cfg.connected = make([]bool, cfg.nservers)
 	// cfg.saved = make([]*Persister, cfg.n)
-	cfg.endnames = make([][]string, cfg.n)
-	cfg.logs = make([]map[int]interface{}, cfg.n)
+	cfg.endnames = make([][]string, cfg.nservers)
+	cfg.logs = make([]map[int]interface{}, cfg.nservers)
 	cfg.start = time.Now()
 
 	cfg.setunreliable(unreliable)
@@ -102,13 +104,13 @@ func make_config(t *testing.T, nworkers int, unreliable bool) *config {
 	cfg.workers[0] = nil
 
 	// create a full set of Workers.
-	for i := 1; i < cfg.n; i++ {
+	for i := 1; i < cfg.nservers; i++ {
 		cfg.logs[i] = map[int]interface{}{}
 		cfg.start1(i, applier)
 	}
 
 	// connect everyone
-	for i := 0; i < cfg.n; i++ {
+	for i := 0; i < cfg.nservers; i++ {
 		cfg.connect(i)
 	}
 
@@ -231,14 +233,14 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 
 	// a fresh set of outgoing ClientEnd names.
 	// so that old crashed instance's ClientEnds can't send.
-	cfg.endnames[i] = make([]string, cfg.n)
-	for j := 0; j < cfg.n; j++ {
+	cfg.endnames[i] = make([]string, cfg.nservers)
+	for j := 0; j < cfg.nservers; j++ {
 		cfg.endnames[i][j] = randstring(20)
 	}
 
 	// a fresh set of ClientEnds.
-	ends := make([]*labrpc.ClientEnd, cfg.n)
-	for j := 0; j < cfg.n; j++ {
+	ends := make([]*labrpc.ClientEnd, cfg.nservers)
+	for j := 0; j < cfg.nservers; j++ {
 		ends[j] = cfg.net.MakeEnd(cfg.endnames[i][j])
 		cfg.net.Connect(cfg.endnames[i][j], j)
 	}
@@ -262,7 +264,7 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 	cfg.mu.Lock()
 	var server interface{}
 	if i == 0 {
-		cr := MakeCoordinator()
+		cr := MakeCoordinator(cfg.nregions)
 		cfg.coordinator = cr
 		server = cr
 
@@ -312,7 +314,7 @@ func (cfg *config) connect(i int) {
 	cfg.connected[i] = true
 
 	// outgoing ClientEnds
-	for j := 0; j < cfg.n; j++ {
+	for j := 0; j < cfg.nservers; j++ {
 		if cfg.connected[j] {
 			endname := cfg.endnames[i][j]
 			cfg.net.Enable(endname, true)
@@ -320,7 +322,7 @@ func (cfg *config) connect(i int) {
 	}
 
 	// incoming ClientEnds
-	for j := 0; j < cfg.n; j++ {
+	for j := 0; j < cfg.nservers; j++ {
 		if cfg.connected[j] {
 			endname := cfg.endnames[j][i]
 			cfg.net.Enable(endname, true)
@@ -335,7 +337,7 @@ func (cfg *config) disconnect(i int) {
 	cfg.connected[i] = false
 
 	// outgoing ClientEnds
-	for j := 0; j < cfg.n; j++ {
+	for j := 0; j < cfg.nservers; j++ {
 		if cfg.endnames[i] != nil {
 			endname := cfg.endnames[i][j]
 			cfg.net.Enable(endname, false)
@@ -343,7 +345,7 @@ func (cfg *config) disconnect(i int) {
 	}
 
 	// incoming ClientEnds
-	for j := 0; j < cfg.n; j++ {
+	for j := 0; j < cfg.nservers; j++ {
 		if cfg.endnames[j] != nil {
 			endname := cfg.endnames[j][i]
 			cfg.net.Enable(endname, false)
@@ -485,7 +487,7 @@ func (cfg *config) end() {
 	if cfg.t.Failed() == false {
 		cfg.mu.Lock()
 		t := time.Since(cfg.t0).Seconds()       // real time
-		npeers := cfg.n                         // number of Raft peers
+		npeers := cfg.nservers                  // number of Raft peers
 		nrpc := cfg.rpcTotal() - cfg.rpcs0      // number of RPC sends
 		nbytes := cfg.bytesTotal() - cfg.bytes0 // number of bytes
 		ncmds := cfg.maxIndex - cfg.maxIndex0   // number of Raft agreements reported
