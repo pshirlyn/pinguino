@@ -46,7 +46,7 @@ func (c *Coordinator) AssignPlayerToRegion(args *AssignPlayerToRegionArgs, reply
 }
 
 func (c *Coordinator) sendHeartbeatToWorker(workerIndex int, args *HeartbeatArgs, reply *HeartbeatReply) {
-	ok := c.workers[workerIndex].Call("Worker.Heartbeat", &args, &reply)
+	ok := c.workers[workerIndex].Call("Worker.Heartbeat", args, reply)
 
 	if !ok {
 		log.Println("couldn't reach worker")
