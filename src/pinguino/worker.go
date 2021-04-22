@@ -36,6 +36,14 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 func (wk *Worker) Kill() {
 }
 
+func (wk *Worker) StableMove(args *StableMoveArgs, reply *StableMoveReply) {
+
+}
+
+func (wk *Worker) FastMove(args *FastMoveArgs, reply *FastMoveReply) {
+
+}
+
 func (wk *Worker) SetPeers(peers []*labrpc.ClientEnd) {
 	wk.mu.Lock()
 	wk.peers = peers
