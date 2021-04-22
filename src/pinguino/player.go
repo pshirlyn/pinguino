@@ -64,6 +64,7 @@ func (pl *Player) getRegionAssignment() {
 	args := AssignPlayerToRegionArgs{Username: username}
 	reply := AssignPlayerToRegionReply{}
 
+	// TODO: only tries to contact coordinator for assignment 10 times. might want to see if we can repeatedly send the RPC instead.
 	ok := false
 	for i := 0; i < 10; i++ {
 		ok = pl.coordinator.Call("Coordinator.AssignPlayerToRegion", &args, &reply)

@@ -27,6 +27,17 @@ type Worker struct {
 	game        *Game
 }
 
+func (wk *Worker) StableMove(args *StableMoveArgs, reply *StableMoveReply) {
+	// TODO
+}
+
+func (wk *Worker) FastMove(args *FastMoveArgs, reply *FastMoveReply) {
+	wk.mu.Lock()
+	wk.log = append(wk.log, &MoveCommand{args.Move, args.Username, args.Region})
+	wk.mu.Unlock()
+
+}
+
 func call(rpcname string, args interface{}, reply interface{}) bool {
 	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
 	sockname := coordinatorSock()
@@ -47,17 +58,6 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 
 func (wk *Worker) Kill() {
 	wk.killed = true // change to atomic write
-}
-
-func (wk *Worker) StableMove(args *StableMoveArgs, reply *StableMoveReply) {
-	// TODO
-}
-
-func (wk *Worker) FastMove(args *FastMoveArgs, reply *FastMoveReply) {
-	wk.mu.Lock()
-	wk.log = append(wk.log, &MoveCommand{args.Move, args.Username, args.Region})
-	wk.mu.Unlock()
-
 }
 
 func MakeWorker(coordinator *labrpc.ClientEnd, peers []*labrpc.ClientEnd, me int) *Worker {

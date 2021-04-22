@@ -12,11 +12,14 @@ import (
 	"time"
 )
 
+const heartbeatTimeInterval = time.Duration(10 * time.Millisecond)
+
 type Coordinator struct {
 	mu sync.Mutex
 
 	nRegions          int
 	workers           []*labrpc.ClientEnd
+	lastHeartbeats    []time.Time
 	playerToRegionMap map[string]int
 	regionToWorkerMap map[int]int
 
@@ -42,6 +45,30 @@ func (c *Coordinator) AssignPlayerToRegion(args *AssignPlayerToRegionArgs, reply
 	reply.Worker = c.regionToWorkerMap[region]
 }
 
+func (c *Coordinator) sendHeartbeatToWorker(workerIndex int, args *HeartbeatArgs, reply *HeartbeatReply) {
+	ok := c.workers[workerIndex].Call("Worker.Heartbeat", &args, &reply)
+
+	if !ok {
+		log.Println("couldn't reach worker")
+		// TODO: handle worker disconnect
+		return
+	}
+
+	// Successfully sent heartbeat to worker, so update lastHearbeat
+	c.lastHeartbeats[workerIndex] = time.Now()
+}
+
+func (c *Coordinator) maybeSendHeartbeats() {
+	for i := 0; i < len(c.workers); i++ {
+		args := HeartbeatArgs{}
+		reply := HeartbeatReply{}
+		// Check time since last hearbeat
+		if time.Since(c.lastHeartbeats[i]) > heartbeatTimeInterval {
+			go c.sendHeartbeatToWorker(i, &args, &reply)
+		}
+	}
+}
+
 // to implement:
 // func (c *Coordinator) MovePlayer()
 
@@ -64,48 +91,33 @@ func (c *Coordinator) server() {
 func (c *Coordinator) Kill() {
 }
 
-func MakeCoordinator(workers []*labrpc.ClientEnd, nregions int) *Coordinator {
+func (c *Coordinator) run() {
+	// main loop
+	for !c.killed {
+		c.maybeSendHeartbeats()
+		time.Sleep(heartbeatTimeInterval)
+	}
+}
+
+func MakeCoordinator(workers []*labrpc.ClientEnd, regions int) *Coordinator {
 	c := &Coordinator{}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.nRegions = nregions
 	// TODO: add coordinator backup server reference here
-	c.workers = workers
-}
-
-func (c *Coordinator) sendHeartbeatToWorker(worker *labrpc.ClientEnd, args *HeartbeatArgs, reply *HeartbeatReply) {
-	ok := worker.Call("Worker.Heartbeat", &args, &reply)
-
-	if !ok {
-		log.Println("couldn't reach worker")
-		// TODO: handle worker disconnect
-	}
-}
-
-func (c *Coordinator) SendHeartbeats() {
-	for _, worker := range c.workers {
-		args := HeartbeatArgs{}
-		reply := HeartbeatReply{}
-		go c.sendHeartbeatToWorker(worker, &args, &reply)
-	}
-}
-
-func (c *Coordinator) run() {
-	// main loop
-	for !c.killed {
-		c.SendHeartbeats()
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
-func MakeCoordinator(regions int) *Coordinator {
-	c := &Coordinator{}
 	c.nRegions = regions
+	c.killed = false
+
+	c.workers = workers
+	c.lastHeartbeats = make([]time.Time, len(c.workers))
+	// Initialize all last heartbeats to current time.
+	for i := 0; i < len(c.workers); i++ {
+		c.lastHeartbeats[i] = time.Now()
+	}
+
 	c.playerToRegionMap = make(map[string]int)
 	c.regionToWorkerMap = make(map[int]int)
-	c.killed = false
 
 	// Assign main worker to each region.
 	// TODO: handle cases where the number of regions != number of workers
