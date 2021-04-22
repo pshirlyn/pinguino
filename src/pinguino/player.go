@@ -3,6 +3,7 @@ package pinguino
 import (
 	"pinguino/src/labrpc"
 	"sync"
+	"time"
 )
 
 type Player struct {
@@ -34,6 +35,10 @@ func (pl *Player) sendStableMove(move interface{}) {
 
 	reply := StableMoveReply{}
 
+	for !pl.isAssigned() {
+		time.Sleep(10 * time.Millisecond) // wait until player is assigned
+	}
+
 	pl.servers[pl.serverIndex].Call("Worker.StableMove", &args, &reply)
 	// TOOD: handle result of call
 }
@@ -43,6 +48,10 @@ func (pl *Player) sendFastMove(move interface{}) {
 	args.Move = move
 
 	reply := FastMoveReply{}
+
+	for !pl.isAssigned() {
+		time.Sleep(10 * time.Millisecond) // wait until player is assigned
+	}
 
 	pl.servers[pl.serverIndex].Call("Worker.FastMove", &args, &reply)
 	// TOOD: handle result of call

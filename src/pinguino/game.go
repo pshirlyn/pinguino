@@ -12,7 +12,7 @@ type Game struct {
 }
 
 func (g *Game) handleMessage(move MoveCommand) {
-	fmt.Println("Received move %s from %s in region", move.Command, move.Username, move.Region)
+	fmt.Printf("Received move %s from %s in region %d", move.Command, move.Username, move.Region)
 }
 
 func (g *Game) run() {
