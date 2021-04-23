@@ -33,9 +33,10 @@ func (wk *Worker) StableMove(args *StableMoveArgs, reply *StableMoveReply) {
 
 func (wk *Worker) FastMove(args *FastMoveArgs, reply *FastMoveReply) {
 	wk.mu.Lock()
-	wk.log = append(wk.log, &MoveCommand{args.Move, args.Username, args.Region})
+	wk.log = append(wk.log, &args.Command)
 	wk.mu.Unlock()
 
+	wk.gameChannel <- args.Command
 }
 
 func (wk *Worker) Heartbeat(args *HeartbeatArgs, reply *HeartbeatReply) {

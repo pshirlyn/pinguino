@@ -1,6 +1,8 @@
 package pinguino
 
 import (
+	"log"
+	"pinguino/src/labgob"
 	"pinguino/src/labrpc"
 	"sync"
 	"time"
@@ -31,7 +33,7 @@ func (pl *Player) SetWorkers(servers []*labrpc.ClientEnd, region int, serverInde
 
 func (pl *Player) sendStableMove(move interface{}) {
 	args := StableMoveArgs{}
-	args.Move = move
+	args.Command = MoveCommand{move, pl.username, pl.region}
 
 	reply := StableMoveReply{}
 
@@ -45,7 +47,7 @@ func (pl *Player) sendStableMove(move interface{}) {
 
 func (pl *Player) sendFastMove(move interface{}) {
 	args := FastMoveArgs{}
-	args.Move = move
+	args.Command = MoveCommand{move, pl.username, pl.region}
 
 	reply := FastMoveReply{}
 
@@ -53,8 +55,14 @@ func (pl *Player) sendFastMove(move interface{}) {
 		time.Sleep(10 * time.Millisecond) // wait until player is assigned
 	}
 
-	pl.servers[pl.serverIndex].Call("Worker.FastMove", &args, &reply)
+	log.Println("sending fast move")
+
+	ok := pl.servers[pl.serverIndex].Call("Worker.FastMove", &args, &reply)
 	// TOOD: handle result of call
+
+	if ok {
+		log.Println("sent fast move")
+	}
 }
 
 // Checks whether the |pl.region| and |pl.serverIndex| has been assigned. This status check verifies whether the player is allowed to start sending moves.
@@ -107,6 +115,8 @@ func MakePlayer(coordinator *labrpc.ClientEnd, servers []*labrpc.ClientEnd, user
 	pl.region = -1
 	pl.serverIndex = -1
 
+	pl.initialize()
+
 	go pl.getRegionAssignment()
 
 	return pl
@@ -138,10 +148,15 @@ func newMove(x int, y int, username string) *Move {
 	return &move
 }
 
-func (pl *Player) Move(x int, y int) {
+func (pl *Player) MovePlayer(x int, y int) {
 	playerMove := newMove(x, y, pl.username)
 
 	pl.sendFastMove(playerMove)
+}
+
+func (pl *Player) initialize() {
+	labgob.Register(Move{})
+	labgob.Register(ChatMessage{})
 }
 
 // func (pl *Player) sendChatMessage(message string) {

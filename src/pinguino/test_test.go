@@ -59,7 +59,7 @@ func TestBasicSend(t *testing.T) {
 	cfg.begin("TestBasicSend: Can send messages")
 
 	player0 := cfg.startPlayer("player0")
-	player0.Move(1, 1)
+	player0.MovePlayer(1, 1)
 
 	cfg.end()
 }
