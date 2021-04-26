@@ -17,6 +17,8 @@ type Player struct {
 
 	region      int // region connected to
 	serverIndex int
+
+	state *PlayerState
 }
 
 func (pl *Player) Kill() {
@@ -151,12 +153,19 @@ func newMove(x int, y int, username string) *Move {
 func (pl *Player) MovePlayer(x int, y int) {
 	playerMove := newMove(x, y, pl.username)
 
-	pl.sendFastMove(playerMove)
+	pl.sendFastMove(playerMove) // handle reply
+
+	pl.mu.Lock()
+	pl.state.x = x
+	pl.state.y = y
+	pl.mu.Unlock()
 }
 
-func (pl *Player) initialize() {
+func (pl *Player) initialize() { // don't hold lock
 	labgob.Register(Move{})
 	labgob.Register(ChatMessage{})
+
+	pl.state = &PlayerState{0, 0} // initialize to 0, 0
 }
 
 // func (pl *Player) sendChatMessage(message string) {
