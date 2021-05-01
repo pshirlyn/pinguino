@@ -1,6 +1,7 @@
 package pinguino
 
 import (
+	"fmt"
 	"log"
 	"sync"
 )
@@ -15,17 +16,35 @@ type Game struct {
 
 	moveCh      chan MoveCommand // channel where it receives all the moves
 	playerState map[string]*PlayerState
+	chatLog     []*ChatMessage
+}
+
+func (g *Game) switchMessageType(msg interface{}, username string) {
+	switch command := msg.(type) {
+	case Move:
+		g.processMove(command, username)
+	case ChatMessage:
+		g.processChatMessage(command, username)
+	default:
+		fmt.Println("Unknown type!")
+	}
+}
+
+func (g *Game) processMove(command Move, username string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.playerState[username] = &PlayerState{command.X, command.Y}
+	log.Printf("Player %s moved to (%d, %d)", username, command.X, command.Y)
+}
+
+func (g *Game) processChatMessage(msg ChatMessage, username string) {
+	g.mu.Lock()
+	g.chatLog = append(g.chatLog, &msg)
+	g.mu.Unlock()
 }
 
 func (g *Game) handleMessage(move MoveCommand) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	// TODO: handle types of commands
-	log.Printf("Received move %s from %s in region %d", move.Command, move.Username, move.Region)
-	command := move.Command.(Move)
-	user := move.Username
-	g.playerState[user] = &PlayerState{command.X, command.Y}
-	log.Printf("Player %s moved to (%d, %d)", move.Username, command.X, command.Y)
+	g.switchMessageType(move.Command, move.Username)
 }
 
 func (g *Game) run() {
