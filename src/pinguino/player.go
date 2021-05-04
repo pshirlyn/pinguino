@@ -18,7 +18,8 @@ type Player struct {
 	region      int // region connected to
 	serverIndex int
 
-	state *PlayerState
+	state     *PlayerState
+	moveIndex int
 }
 
 func (pl *Player) Kill() {
@@ -43,8 +44,13 @@ func (pl *Player) sendStableMove(move interface{}) {
 		time.Sleep(10 * time.Millisecond) // wait until player is assigned
 	}
 
-	pl.servers[pl.serverIndex].Call("Worker.StableMove", &args, &reply)
-	// TOOD: handle result of call
+	ok := false
+	for i := 0; i < 10; i++ {
+		ok = pl.servers[pl.serverIndex].Call("Worker.StableMove", &args, &reply)
+		if ok && reply.Success {
+			break
+		}
+	}
 }
 
 func (pl *Player) sendFastMove(move interface{}) {
@@ -59,11 +65,13 @@ func (pl *Player) sendFastMove(move interface{}) {
 
 	log.Println("sending fast move")
 
-	ok := pl.servers[pl.serverIndex].Call("Worker.FastMove", &args, &reply)
+	ok := false
 	// TOOD: handle result of call
-
-	if ok {
-		log.Println("sent fast move")
+	for i := 0; i < 10; i++ {
+		ok = pl.servers[pl.serverIndex].Call("Worker.FastMove", &args, &reply)
+		if ok && reply.Success {
+			break
+		}
 	}
 }
 
@@ -116,6 +124,7 @@ func MakePlayer(coordinator *labrpc.ClientEnd, servers []*labrpc.ClientEnd, user
 	// Temporary initialization
 	pl.region = -1
 	pl.serverIndex = -1
+	pl.moveIndex = 0
 
 	pl.initialize()
 
@@ -150,7 +159,14 @@ func newMove(x int, y int, username string) *Move {
 	return &move
 }
 
-func (pl *Player) MovePlayer(x int, y int) {
+func newChatMessage(msg string, username string) *ChatMessage {
+	chatMessage := ChatMessage{}
+	chatMessage.Message = msg
+	chatMessage.Username = username
+	return &chatMessage
+}
+
+func (pl *Player) ClientMovePlayer(x int, y int) {
 	playerMove := newMove(x, y, pl.username)
 
 	pl.sendFastMove(playerMove) // handle reply
@@ -168,6 +184,8 @@ func (pl *Player) initialize() { // don't hold lock
 	pl.state = &PlayerState{0, 0} // initialize to 0, 0
 }
 
-// func (pl *Player) sendChatMessage(message string) {
-// 	playerMove := NewMove(message,
-// }
+func (pl *Player) SendChatMessage(message string) {
+	chatMessage := newChatMessage(message, pl.username)
+
+	pl.sendStableMove(chatMessage)
+}

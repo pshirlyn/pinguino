@@ -41,6 +41,7 @@ func (g *Game) processChatMessage(msg ChatMessage, username string) {
 	g.mu.Lock()
 	g.chatLog = append(g.chatLog, &msg)
 	g.mu.Unlock()
+	log.Printf("Player %s typed: %s", msg.Username, msg.Message)
 }
 
 func (g *Game) handleMessage(move MoveCommand) {

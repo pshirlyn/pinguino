@@ -17,8 +17,9 @@ type MoveCommand struct {
 type Worker struct {
 	mu sync.Mutex
 
-	peers []*labrpc.ClientEnd
-	me    int
+	peers    []*labrpc.ClientEnd
+	me       int
+	replicas int
 
 	log    []*MoveCommand
 	killed bool
@@ -28,19 +29,25 @@ type Worker struct {
 }
 
 func (wk *Worker) StableMove(args *StableMoveArgs, reply *StableMoveReply) {
-	// TODO
+	wk.mu.Lock()
+	wk.log = append(wk.log, &args.Command)
+	reply.Success = true
+	wk.mu.Unlock()
+
+	wk.gameChannel <- args.Command
 }
 
 func (wk *Worker) FastMove(args *FastMoveArgs, reply *FastMoveReply) {
 	wk.mu.Lock()
 	wk.log = append(wk.log, &args.Command)
+	reply.Success = true
 	wk.mu.Unlock()
 
 	wk.gameChannel <- args.Command
 }
 
 func (wk *Worker) Heartbeat(args *HeartbeatArgs, reply *HeartbeatReply) {
-
+	
 }
 
 func call(rpcname string, args interface{}, reply interface{}) bool {
@@ -65,7 +72,11 @@ func (wk *Worker) Kill() {
 	wk.killed = true // change to atomic write
 }
 
-func MakeWorker(coordinator *labrpc.ClientEnd, peers []*labrpc.ClientEnd, me int) *Worker {
+func SetReplicas(replicas []int) {
+	return
+}
+
+func MakeWorker(coordinator *labrpc.ClientEnd, peers []*labrpc.ClientEnd, me int, replicas []int) *Worker {
 	wk := &Worker{}
 
 	wk.mu.Lock()
