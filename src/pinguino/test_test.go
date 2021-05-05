@@ -1,17 +1,18 @@
 package pinguino
 
 import (
+	"fmt"
 	"log"
 	"testing"
 	"time"
 )
 
 func TestInitalizeNetwork(t *testing.T) {
-	servers := 5
+	workers := 5
 	regions := 5
 	reliable := false
 
-	cfg := make_config(t, servers, regions, reliable)
+	cfg := make_config(t, workers, regions, reliable)
 	defer cfg.cleanup()
 
 	cfg.begin("TestInitalizeNetwork: Basic test")
@@ -20,11 +21,11 @@ func TestInitalizeNetwork(t *testing.T) {
 }
 
 func TestInitalizePlayer(t *testing.T) {
-	servers := 5
+	workers := 5
 	regions := 5
 	reliable := false
 
-	cfg := make_config(t, servers, regions, reliable)
+	cfg := make_config(t, workers, regions, reliable)
 	defer cfg.cleanup()
 
 	cfg.begin("TestInitalizePlayer: Player initialization assigned to region")
@@ -49,12 +50,45 @@ func TestInitalizePlayer(t *testing.T) {
 
 }
 
+func TestOneDisconnectedWorker(t *testing.T) {
+	workers := 3
+	regions := 3
+	reliable := false
+
+	cfg := make_config(t, workers, regions, reliable)
+	defer cfg.cleanup()
+
+	cfg.begin("TestOneDisconnectedWorker: Coordinator fails to send heartbeat to a disconnected worker")
+
+	time.Sleep(25 * time.Millisecond)
+	// Disconnecting worker 1
+	fmt.Println("DISCONNECTING")
+	cfg.disconnect(3)
+	time.Sleep(50 * time.Millisecond)
+	cfg.end()
+}
+
+func TestAddNewWorker(t *testing.T) {
+	workers := 3
+	regions := 3
+	reliable := false
+
+	cfg := make_config(t, workers, regions, reliable)
+	defer cfg.cleanup()
+
+	cfg.begin("TestAddNewWorker: New server worker is added")
+
+	// Add a new fourth worker
+	cfg.start1(4, cfg.applier)
+	cfg.end()
+}
+
 func TestBasicSend(t *testing.T) {
-	servers := 5
+	workers := 5
 	regions := 5
 	reliable := false
 
-	cfg := make_config(t, servers, regions, reliable)
+	cfg := make_config(t, workers, regions, reliable)
 	defer cfg.cleanup()
 
 	cfg.begin("TestBasicSend: Can send messages")

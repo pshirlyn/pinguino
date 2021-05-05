@@ -229,6 +229,42 @@ func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
 // this server. since we cannot really kill it.
 //
 func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
+	if i >= cfg.nservers {
+		// Adding a new server. Need to provide new ClientEnd to all existing server.
+
+		cfg.mu.Lock()
+		nServersNew := i + 1
+		nServersOld := cfg.nservers
+
+		for j := nServersOld; j < nServersNew; j++ {
+			cfg.applyErr = append(cfg.applyErr, "")
+			cfg.workers = append(cfg.workers, nil)
+			cfg.connected = append(cfg.connected, true)
+			cfg.endnames = append(cfg.endnames, nil)
+			cfg.logs = append(cfg.logs, nil)
+		}
+
+		// Provide new ClientEnd to all existing server
+		for existingServer := 0; existingServer < nServersOld; existingServer++ {
+			var ends []*labrpc.ClientEnd
+			for j := nServersOld; j < nServersNew; j++ {
+				name := randstring(20)
+				cfg.endnames[existingServer] = append(cfg.endnames[existingServer], name)
+				ends = append(ends, cfg.net.MakeEnd(name))
+				cfg.net.Connect(name, j)
+			}
+
+			if existingServer == 0 {
+				cfg.coordinator.NewWorkersAdded(ends)
+			} else {
+				cfg.workers[existingServer].NewWorkersAdded(ends)
+			}
+		}
+		cfg.nservers = nServersNew
+
+		cfg.mu.Unlock()
+	}
+
 	cfg.crash1(i)
 
 	// a fresh set of outgoing ClientEnd names.
@@ -273,6 +309,7 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 		cfg.workers[i] = wk
 		server = wk
 	}
+	cfg.connected[i] = true
 	cfg.mu.Unlock()
 
 	go applier(i, applyCh)

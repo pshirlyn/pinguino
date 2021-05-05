@@ -47,7 +47,7 @@ func (c *Coordinator) AssignPlayerToRegion(args *AssignPlayerToRegionArgs, reply
 
 func (c *Coordinator) sendHeartbeatToWorker(workerIndex int, args *HeartbeatArgs, reply *HeartbeatReply) {
 	ok := c.workers[workerIndex].Call("Worker.Heartbeat", args, reply)
-
+	// fmt.Printf("Heartbeat: S%d\n", workerIndex+1)
 	if !ok {
 		log.Println("couldn't reach worker")
 		// TODO: handle worker disconnect
@@ -71,6 +71,21 @@ func (c *Coordinator) maybeSendHeartbeats() {
 
 // to implement:
 // func (c *Coordinator) MovePlayer()
+
+// func (c *Coordinator) NewWorkersAdded(args *NewWorkersAddedArgs, reply *NewWorkersAddedReply) {
+func (c *Coordinator) NewWorkersAdded(workers []*labrpc.ClientEnd) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.workers = append(c.workers, workers...)
+
+	// TODO: rather than just adding a new region, check if there's a worker that is handling multiple regions first
+	for i := 0; i < len(workers); i++ {
+		c.regionToWorkerMap[c.nRegions+i] = c.nRegions + 1
+		c.lastHeartbeats = append(c.lastHeartbeats, time.Now())
+	}
+	c.nRegions += len(workers)
+}
 
 //
 // start a thread that listens for RPCs from worker.go
