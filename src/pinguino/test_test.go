@@ -1,7 +1,6 @@
 package pinguino
 
 import (
-	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -48,24 +47,6 @@ func TestInitalizePlayer(t *testing.T) {
 	t.Fatalf("Player not assigned within 10 sec")
 	cfg.end()
 
-}
-
-func TestOneDisconnectedWorker(t *testing.T) {
-	workers := 3
-	regions := 3
-	reliable := false
-
-	cfg := make_config(t, workers, regions, reliable)
-	defer cfg.cleanup()
-
-	cfg.begin("TestOneDisconnectedWorker: Coordinator fails to send heartbeat to a disconnected worker")
-
-	time.Sleep(25 * time.Millisecond)
-	// Disconnecting worker 1
-	fmt.Println("DISCONNECTING")
-	cfg.disconnect(3)
-	time.Sleep(50 * time.Millisecond)
-	cfg.end()
 }
 
 func TestAddNewWorker(t *testing.T) {

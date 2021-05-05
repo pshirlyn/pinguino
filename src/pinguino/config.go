@@ -221,6 +221,41 @@ func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
 // 	}
 // }
 
+func (cfg *config) updateForNewServer(i int) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+
+	nServersNew := i + 1
+	nServersOld := cfg.nservers
+
+	// Update config
+	for j := nServersOld; j < nServersNew; j++ {
+		cfg.applyErr = append(cfg.applyErr, "")
+		cfg.workers = append(cfg.workers, nil)
+		cfg.connected = append(cfg.connected, true)
+		cfg.endnames = append(cfg.endnames, nil)
+		cfg.logs = append(cfg.logs, nil)
+	}
+
+	// Provide new ClientEnd to all existing server
+	for existingServer := 0; existingServer < nServersOld; existingServer++ {
+		var ends []*labrpc.ClientEnd
+		for j := nServersOld; j < nServersNew; j++ {
+			name := randstring(20)
+			cfg.endnames[existingServer] = append(cfg.endnames[existingServer], name)
+			ends = append(ends, cfg.net.MakeEnd(name))
+			cfg.net.Connect(name, j)
+		}
+
+		if existingServer == 0 {
+			cfg.coordinator.NewWorkersAdded(ends)
+		} else {
+			cfg.workers[existingServer].NewWorkersAdded(ends)
+		}
+	}
+	cfg.nservers = nServersNew
+}
+
 //
 // start or re-start a Worker.
 // if one already exists, "kill" it first.
@@ -230,39 +265,9 @@ func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
 //
 func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 	if i >= cfg.nservers {
-		// Adding a new server. Need to provide new ClientEnd to all existing server.
-
-		cfg.mu.Lock()
-		nServersNew := i + 1
-		nServersOld := cfg.nservers
-
-		for j := nServersOld; j < nServersNew; j++ {
-			cfg.applyErr = append(cfg.applyErr, "")
-			cfg.workers = append(cfg.workers, nil)
-			cfg.connected = append(cfg.connected, true)
-			cfg.endnames = append(cfg.endnames, nil)
-			cfg.logs = append(cfg.logs, nil)
-		}
-
-		// Provide new ClientEnd to all existing server
-		for existingServer := 0; existingServer < nServersOld; existingServer++ {
-			var ends []*labrpc.ClientEnd
-			for j := nServersOld; j < nServersNew; j++ {
-				name := randstring(20)
-				cfg.endnames[existingServer] = append(cfg.endnames[existingServer], name)
-				ends = append(ends, cfg.net.MakeEnd(name))
-				cfg.net.Connect(name, j)
-			}
-
-			if existingServer == 0 {
-				cfg.coordinator.NewWorkersAdded(ends)
-			} else {
-				cfg.workers[existingServer].NewWorkersAdded(ends)
-			}
-		}
-		cfg.nservers = nServersNew
-
-		cfg.mu.Unlock()
+		// Adding a new server.
+		// Update config. Provide connections for each existing server to communicate with new server by providing each with a new ClientEnd.
+		cfg.updateForNewServer(i)
 	}
 
 	cfg.crash1(i)
