@@ -22,6 +22,7 @@ type Coordinator struct {
 	lastHeartbeats    []time.Time
 	playerToRegionMap map[string]int
 	regionToWorkerMap map[int]int
+	backup            int
 
 	killed bool
 }
@@ -99,17 +100,23 @@ func (c *Coordinator) run() {
 	}
 }
 
+func (c *Coordinator) SelectBackup() {
+	// Selects backup out of existing servers
+	idx := rand.Intn(len(c.workers))
+	c.backup = idx
+}
+
 func MakeCoordinator(workers []*labrpc.ClientEnd, regions int) *Coordinator {
 	c := &Coordinator{}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// TODO: add coordinator backup server reference here
 	c.nRegions = regions
 	c.killed = false
 
 	c.workers = workers
+	c.SelectBackup()
 	c.lastHeartbeats = make([]time.Time, len(c.workers))
 	// Initialize all last heartbeats to current time.
 	for i := 0; i < len(c.workers); i++ {

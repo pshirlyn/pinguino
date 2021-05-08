@@ -5,6 +5,16 @@ import (
 	"strconv"
 )
 
+type SendReplicaArgs struct {
+	Replica   []byte
+	Worker    int
+	MoveIndex int
+}
+
+type SendReplicaReply struct {
+	Success bool
+}
+
 type StableMoveArgs struct {
 	Command MoveCommand
 }
