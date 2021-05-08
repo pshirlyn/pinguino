@@ -61,6 +61,13 @@ func (wk *Worker) Heartbeat(args *HeartbeatArgs, reply *HeartbeatReply) {
 	reply.Success = true
 }
 
+func (wk *Worker) NewWorkersAdded(workers []*labrpc.ClientEnd) {
+	wk.mu.Lock()
+	defer wk.mu.Unlock()
+
+	wk.peers = append(wk.peers, workers...)
+}
+
 func call(rpcname string, args interface{}, reply interface{}) bool {
 	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
 	sockname := coordinatorSock()
