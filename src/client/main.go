@@ -33,14 +33,13 @@ func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println(err)
 	}
-
-	reader(ws)
+	go handleConnection(ws)
 }
 
 // define a reader which will listen for
 // new messages being sent to our WebSocket
 // endpoint
-func reader(conn *websocket.Conn) {
+func handleConnection(conn *websocket.Conn) {
 	for {
 		// read in a message
 		messageType, p, err := conn.ReadMessage()
@@ -49,7 +48,7 @@ func reader(conn *websocket.Conn) {
 			return
 		}
 		// print out that message for clarity
-		fmt.Println(string(p))
+		fmt.Println("main received", string(p))
 
 		if err := conn.WriteMessage(messageType, p); err != nil {
 			log.Println(err)
