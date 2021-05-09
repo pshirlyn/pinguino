@@ -26,6 +26,12 @@ socket.onerror = error => {
     console.log("Socket Error: ", error);
 };
 
+var c = document.getElementById("main-canvas");
+var ctx = c.getContext("2d");
+ctx.moveTo(0, 0);
+ctx.lineTo(200, 100);
+ctx.stroke();
+
 // function Session() {
 //     this.socket = null;
 //     this.onmessage = null;
