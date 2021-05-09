@@ -129,6 +129,7 @@ func MakeCoordinator(workers []*labrpc.ClientEnd, regions int) *Coordinator {
 
 	c.nRegions = regions
 	c.killed = false
+	c.backup = -1
 
 	c.workers = workers
 	c.SelectBackup()

@@ -132,3 +132,43 @@ func TestStableSend(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestCoordinatorBackupAssigned(t *testing.T) {
+	servers := 5
+	regions := 5
+	reliable := false
+
+	cfg := make_config(t, servers, regions, reliable)
+	defer cfg.cleanup()
+
+	cfg.begin("TestCoordinatorBackupAssigned: Has backup")
+
+	if cfg.coordinator.backup == -1 {
+		log.Fatalf("Coordinator has no backup assigned")
+	}
+
+	// player0 := cfg.startPlayer("player0")
+
+	// t0 := time.Now()
+	// for time.Since(t0).Seconds() < 10 {
+	// 	assigned := player0.isAssigned()
+
+	// 	if assigned {
+	// 		player0.SendChatMessage("hello")
+
+	// 		time.Sleep(10 * time.Millisecond)
+
+	// 		// how to confirm that message was added to game??
+
+	// 		// msg := ChatMessage{"hello", "player0"}
+	// 		// if player0.servers[player0.serverIndex].logs[0] != msg {
+	// 		// 	log.Println("Test stable send: wrong player state after 10ms")
+	// 		// 	log.Printf("Expected (%d, %d), got (%d, %d)\n", 1, 1, player0.state.x, player0.state.y)
+	// 		// }
+	// 		cfg.end()
+	// 		return
+	// 	}
+
+	// 	time.Sleep(10 * time.Millisecond)
+	// }
+}
