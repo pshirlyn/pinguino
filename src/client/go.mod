@@ -1,4 +1,4 @@
-module pinguino
+module pinguclient
 
 go 1.15
 
