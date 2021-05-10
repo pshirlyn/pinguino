@@ -19,6 +19,7 @@ type Coordinator struct {
 	mu sync.Mutex
 
 	nRegions          int
+	players           map[string]*labrpc.ClientEnd
 	workers           []*labrpc.ClientEnd
 	lastHeartbeats    []time.Time
 	playerToRegionMap map[string]int
@@ -50,8 +51,9 @@ func (c *Coordinator) AssignPlayerToRegion(args *AssignPlayerToRegionArgs, reply
 func (c *Coordinator) sendHeartbeatToWorker(workerIndex int, args *HeartbeatArgs, reply *HeartbeatReply) {
 	ok := c.workers[workerIndex].Call("Worker.Heartbeat", args, reply)
 	// fmt.Printf("Heartbeat: S%d\n", workerIndex+1)
-	if !ok {
-		log.Println("couldn't reach worker")
+	if !ok && !c.killed() {
+		// Add one because config and test references 1 indexing for workers
+		log.Printf("couldn't reach worker %d\n", workerIndex+1)
 		// TODO: handle worker disconnect
 		return
 	}
@@ -74,7 +76,13 @@ func (c *Coordinator) maybeSendHeartbeats() {
 // to implement:
 // func (c *Coordinator) MovePlayer()
 
-// func (c *Coordinator) NewWorkersAdded(args *NewWorkersAddedArgs, reply *NewWorkersAddedReply) {
+func (c *Coordinator) NewPlayerAdded(username string, end *labrpc.ClientEnd) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.players[username] = end
+}
+
 func (c *Coordinator) NewWorkersAdded(workers []*labrpc.ClientEnd) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -136,6 +144,7 @@ func MakeCoordinator(workers []*labrpc.ClientEnd, regions int) *Coordinator {
 	c.nRegions = regions
 	c.backup = -1
 
+	c.players = make(map[string]*labrpc.ClientEnd)
 	c.workers = workers
 	c.SelectBackup()
 	c.lastHeartbeats = make([]time.Time, len(c.workers))

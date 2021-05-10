@@ -5,11 +5,13 @@ import (
 	"pinguino/src/labgob"
 	"pinguino/src/labrpc"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type Player struct {
-	mu sync.Mutex
+	mu   sync.Mutex
+	dead int32
 
 	coordinator *labrpc.ClientEnd
 	servers     []*labrpc.ClientEnd
@@ -23,6 +25,12 @@ type Player struct {
 }
 
 func (pl *Player) Kill() {
+	atomic.StoreInt32(&pl.dead, 1)
+}
+
+func (pl *Player) killed() bool {
+	z := atomic.LoadInt32(&pl.dead)
+	return z == 1
 }
 
 func (pl *Player) SetWorkers(servers []*labrpc.ClientEnd, region int, serverIndex int) {
@@ -83,7 +91,8 @@ func (pl *Player) isAssigned() bool {
 	return pl.region >= 0 && pl.serverIndex >= 0
 }
 
-func (pl *Player) getRegionAssignment() {
+// Used upon player initialization for a player to request assignment to a reigon and worker
+func (pl *Player) requestRegionAssignment() {
 	pl.mu.Lock()
 	username := pl.username
 	pl.mu.Unlock()
@@ -128,7 +137,7 @@ func MakePlayer(coordinator *labrpc.ClientEnd, servers []*labrpc.ClientEnd, user
 
 	pl.initialize()
 
-	go pl.getRegionAssignment()
+	go pl.requestRegionAssignment()
 
 	return pl
 }

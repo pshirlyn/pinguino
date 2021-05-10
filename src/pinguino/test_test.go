@@ -75,7 +75,7 @@ func TestAddNewWorker(t *testing.T) {
 	cfg.begin("TestAddNewWorker: New server worker is added")
 
 	// Add a new fourth worker
-	cfg.start1(4, cfg.applier)
+	cfg.start1(4, cfg.applier, false)
 	cfg.end()
 }
 

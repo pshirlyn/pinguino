@@ -51,6 +51,8 @@ type config struct {
 	// An n-th length array with 0th index as nil and 1 to n-1 indices containing a pointer to a worker. This is to allow the coordinator to be represented as server 0 while workers are servers 1 to n.
 	workers []*Worker
 
+	players []*Player
+
 	applyErr  []string // from apply channel readers
 	connected []bool   // whether each server is on the net
 	// saved       []*Persister
@@ -84,6 +86,7 @@ func make_config(t *testing.T, nworkers int, nregions int, unreliable bool) *con
 	cfg.nregions = nregions
 	cfg.applyErr = make([]string, cfg.nservers)
 	cfg.workers = make([]*Worker, cfg.nservers)
+	cfg.players = make([]*Player, 0)
 	cfg.connected = make([]bool, cfg.nservers)
 	// cfg.saved = make([]*Persister, cfg.n)
 	cfg.endnames = make([][]string, cfg.nservers)
@@ -98,7 +101,7 @@ func make_config(t *testing.T, nworkers int, nregions int, unreliable bool) *con
 
 	// create a Coordinator.
 	cfg.logs[0] = map[int]interface{}{}
-	cfg.start1(0, applier)
+	cfg.start1(0, applier, true)
 
 	// initialize 0th index as nil
 	cfg.workers[0] = nil
@@ -106,7 +109,7 @@ func make_config(t *testing.T, nworkers int, nregions int, unreliable bool) *con
 	// create a full set of Workers.
 	for i := 1; i < cfg.nservers; i++ {
 		cfg.logs[i] = map[int]interface{}{}
-		cfg.start1(i, applier)
+		cfg.start1(i, applier, true)
 	}
 
 	// connect everyone
@@ -221,6 +224,7 @@ func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
 // 	}
 // }
 
+// helper function to update config and existing servers when adding a new server after initialization
 func (cfg *config) updateForNewServer(i int) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
@@ -263,14 +267,16 @@ func (cfg *config) updateForNewServer(i int) {
 // state persister, to isolate previous instance of
 // this server. since we cannot really kill it.
 //
-func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
+func (cfg *config) start1(i int, applier func(int, chan ApplyMsg), initializing bool) {
 	if i >= cfg.nservers {
 		// Adding a new server.
 		// Update config. Provide connections for each existing server to communicate with new server by providing each with a new ClientEnd.
 		cfg.updateForNewServer(i)
 	}
 
-	cfg.crash1(i)
+	if !initializing {
+		cfg.crash1(i)
+	}
 
 	// a fresh set of outgoing ClientEnd names.
 	// so that old crashed instance's ClientEnds can't send.
@@ -328,6 +334,17 @@ func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 // Start a new player
 // TODO: keep track of started players to be able to re-start or "kill" it
 func (cfg *config) startPlayer(username string) *Player {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+
+	// Create an endname and end for Coordinator --> Player
+	cEndname := randstring(20)
+	cEnd := cfg.net.MakeEnd(cEndname)
+	cfg.net.Connect(cEndname, len(cfg.players)+100)
+	cfg.net.Enable(cEndname, true)
+	cfg.coordinator.NewPlayerAdded(username, cEnd)
+
+	// Create endnames and ends for Player --> servers
 	endnames := make([]string, cfg.nservers)
 	for j := 0; j < cfg.nservers; j++ {
 		endnames[j] = randstring(20)
@@ -343,7 +360,9 @@ func (cfg *config) startPlayer(username string) *Player {
 	coordinatorEnd := ends[0]
 	workerEnds := ends[1:]
 
-	return MakePlayer(coordinatorEnd, workerEnds, username)
+	player := MakePlayer(coordinatorEnd, workerEnds, username)
+	cfg.players = append(cfg.players, player)
+	return player
 }
 
 func (cfg *config) checkTimeout() {
@@ -354,16 +373,23 @@ func (cfg *config) checkTimeout() {
 }
 
 func (cfg *config) cleanup() {
-	// Kill workers
-	for i := 0; i < len(cfg.workers); i++ {
-		if cfg.workers[i] != nil {
-			cfg.workers[i].Kill()
+	// Kill players
+	for p := 0; p < len(cfg.players); p++ {
+		if cfg.players[p] != nil {
+			cfg.players[p].Kill()
 		}
 	}
 
 	// Kill coordinator
 	if cfg.coordinator != nil {
 		cfg.coordinator.Kill()
+	}
+
+	// Kill workers
+	for i := 0; i < len(cfg.workers); i++ {
+		if cfg.workers[i] != nil {
+			cfg.workers[i].Kill()
+		}
 	}
 
 	cfg.net.Cleanup()
