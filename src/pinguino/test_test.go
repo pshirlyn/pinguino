@@ -19,6 +19,21 @@ func TestInitalizeNetwork(t *testing.T) {
 	cfg.end()
 }
 
+func TestInitalizeNetworkAndWait(t *testing.T) {
+	workers := 5
+	regions := 5
+	reliable := false
+
+	cfg := make_config(t, workers, regions, reliable)
+	defer cfg.cleanup()
+
+	cfg.begin("TestInitalizeNetworkAndWait: After initializing, wait for a bit to see if heartbeats are ok")
+
+	time.Sleep(3 * time.Second)
+
+	cfg.end()
+}
+
 func TestInitalizePlayer(t *testing.T) {
 	workers := 5
 	regions := 5
@@ -61,6 +76,24 @@ func TestAddNewWorker(t *testing.T) {
 
 	// Add a new fourth worker
 	cfg.start1(4, cfg.applier)
+	cfg.end()
+}
+
+func TestAddMultipleNewWorkers(t *testing.T) {
+	workers := 3
+	regions := 3
+	reliable := false
+
+	cfg := make_config(t, workers, regions, reliable)
+	defer cfg.cleanup()
+
+	cfg.begin("TestAddMultipleNewWorkers: Multiple new server workers are added")
+
+	// Add a new fourth worker
+	cfg.start1(4, cfg.applier, false)
+
+	// Add a new fifth worker
+	cfg.start1(5, cfg.applier, false)
 	cfg.end()
 }
 

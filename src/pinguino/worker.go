@@ -8,6 +8,7 @@ import (
 	"pinguino/src/labgob"
 	"pinguino/src/labrpc"
 	"sync"
+	"sync/atomic"
 )
 
 type MoveCommand struct {
@@ -31,7 +32,7 @@ type Worker struct {
 
 	moveIndex int
 	log       []*MoveCommand
-	killed    bool
+	dead      int32
 
 	gameChannel chan MoveCommand
 	game        *Game
@@ -87,7 +88,12 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 }
 
 func (wk *Worker) Kill() {
-	wk.killed = true // change to atomic write
+	atomic.StoreInt32(&wk.dead, 1)
+}
+
+func (wk *Worker) killed() bool {
+	z := atomic.LoadInt32(&wk.dead)
+	return z == 1
 }
 
 func (wk *Worker) SendReplica(args *SendReplicaArgs, reply *SendReplicaReply) {

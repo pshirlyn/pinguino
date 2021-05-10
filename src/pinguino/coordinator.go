@@ -9,6 +9,7 @@ import (
 	"os"
 	"pinguino/src/labrpc"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,7 +25,7 @@ type Coordinator struct {
 	regionToWorkerMap map[int]int
 	backup            int
 
-	killed bool
+	dead int32
 }
 
 // Used to pick a region to assign to players.
@@ -105,11 +106,16 @@ func (c *Coordinator) server() {
 }
 
 func (c *Coordinator) Kill() {
+	atomic.StoreInt32(&c.dead, 1)
 }
 
+func (c *Coordinator) killed() bool {
+	z := atomic.LoadInt32(&c.dead)
+	return z == 1
+}
 func (c *Coordinator) run() {
 	// main loop
-	for !c.killed {
+	for !c.killed() {
 		c.maybeSendHeartbeats()
 		time.Sleep(heartbeatTimeInterval)
 	}
@@ -128,7 +134,6 @@ func MakeCoordinator(workers []*labrpc.ClientEnd, regions int) *Coordinator {
 	defer c.mu.Unlock()
 
 	c.nRegions = regions
-	c.killed = false
 	c.backup = -1
 
 	c.workers = workers
