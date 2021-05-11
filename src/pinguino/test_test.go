@@ -1,10 +1,32 @@
 package pinguino
 
 import (
+	"fmt"
 	"log"
 	"testing"
 	"time"
 )
+
+func checkPlayerAssigned(pl *Player) bool {
+	// Check if the player was assigned to a region successfully within 10 secs
+	t0 := time.Now()
+	for time.Since(t0).Seconds() < 10 {
+		assigned := pl.isAssigned()
+
+		if assigned {
+			return true
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	log.Fatalf("Player not assigned within 10 sec")
+	return false
+}
+
+// ---------------------------------------------
+// 				   	Test Suite
+// ---------------------------------------------
 
 func TestInitalizeNetwork(t *testing.T) {
 	workers := 5
@@ -47,21 +69,8 @@ func TestInitalizePlayer(t *testing.T) {
 	player0 := cfg.startPlayer("player0")
 
 	// Check if the player was assigned to a region successfully within 10 secs
-	t0 := time.Now()
-	for time.Since(t0).Seconds() < 10 {
-		assigned := player0.isAssigned()
-
-		if assigned {
-			cfg.end()
-			return
-		}
-
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	t.Fatalf("Player not assigned within 10 sec")
+	checkPlayerAssigned(player0)
 	cfg.end()
-
 }
 
 func TestAddNewWorker(t *testing.T) {
@@ -94,6 +103,60 @@ func TestAddMultipleNewWorkers(t *testing.T) {
 
 	// Add a new fifth worker
 	cfg.start1(5, cfg.applier, false)
+	cfg.end()
+}
+
+func TestBasicDisconnectWorker(t *testing.T) {
+	workers := 3
+	regions := 3
+	reliable := false
+
+	cfg := make_config(t, workers, regions, reliable)
+	defer cfg.cleanup()
+
+	cfg.begin("TestBasicDisconnectWorker: Disconnect a worker")
+
+	// Disconnect server worker 1
+	cfg.disconnect(1)
+
+	time.Sleep(100 * time.Millisecond)
+	cfg.end()
+}
+
+func TestDisconnectWorkerAndReassignPlayer(t *testing.T) {
+	workers := 3
+	regions := 3
+	reliable := false
+
+	cfg := make_config(t, workers, regions, reliable)
+	defer cfg.cleanup()
+
+	cfg.begin("TestDisconnectWorkerAndReassignPlayer: Disconnect a worker and reassign its players to another worker")
+
+	player0 := cfg.startPlayer("player0")
+
+	// Ensure that the player had enough time to initialize and be assigned to a region and an corresponding worker
+	checkPlayerAssigned(player0)
+
+	// Add 1 because server index uses zero indexing, but we need one indexing to connect/disconnect with config
+	assignedWorker := player0.getServerIndex() + 1
+
+	fmt.Printf("Disconnecting worker %d\n", assignedWorker)
+	cfg.disconnect(assignedWorker)
+
+	// Check if the player was reassigned to another worker
+	t0 := time.Now()
+	for time.Since(t0).Seconds() < 10 {
+		newAssignedWorker := player0.getServerIndex() + 1
+		if assignedWorker != newAssignedWorker {
+			cfg.end()
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	log.Fatalf("Player was not reassigned within 10 secs")
 	cfg.end()
 }
 

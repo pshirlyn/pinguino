@@ -1,6 +1,7 @@
 package pinguino
 
 import (
+	"fmt"
 	"log"
 	"pinguino/src/labgob"
 	"pinguino/src/labrpc"
@@ -89,6 +90,24 @@ func (pl *Player) isAssigned() bool {
 	defer pl.mu.Unlock()
 
 	return pl.region >= 0 && pl.serverIndex >= 0
+}
+
+func (pl *Player) getServerIndex() int {
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+
+	return pl.serverIndex
+}
+
+// RPC handle for a player to be notified of reassignment.
+func (pl *Player) WorkerReassignment(args *WorkerReassignmentArgs, reply *WorkerReassignmentReply) {
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+
+	pl.serverIndex = args.Worker
+
+	reply.Success = true
+	fmt.Printf("NEW SERVER INDEX: %d\n", pl.serverIndex)
 }
 
 // Used upon player initialization for a player to request assignment to a reigon and worker

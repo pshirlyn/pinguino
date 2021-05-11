@@ -21,6 +21,8 @@ type Coordinator struct {
 	nRegions          int
 	players           map[string]*labrpc.ClientEnd
 	workers           []*labrpc.ClientEnd
+	isConnectedWorker map[int]bool
+
 	lastHeartbeats    []time.Time
 	playerToRegionMap map[string]int
 	regionToWorkerMap map[int]int
@@ -51,15 +53,25 @@ func (c *Coordinator) AssignPlayerToRegion(args *AssignPlayerToRegionArgs, reply
 func (c *Coordinator) sendHeartbeatToWorker(workerIndex int, args *HeartbeatArgs, reply *HeartbeatReply) {
 	ok := c.workers[workerIndex].Call("Worker.Heartbeat", args, reply)
 	// fmt.Printf("Heartbeat: S%d\n", workerIndex+1)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if !ok && !c.killed() {
-		// Add one because config and test references 1 indexing for workers
-		log.Printf("couldn't reach worker %d\n", workerIndex+1)
-		// TODO: handle worker disconnect
+		if c.isConnectedWorker[workerIndex] {
+			// Add one because config and test references 1 indexing for workers
+			log.Printf("couldn't reach worker %d\n", workerIndex+1)
+
+			c.WorkerCrashed(workerIndex)
+		}
 		return
 	}
 
+	// TODO: handle worker that reconnects. need to redistribute region
+
 	// Successfully sent heartbeat to worker, so update lastHearbeat
 	c.lastHeartbeats[workerIndex] = time.Now()
+	c.isConnectedWorker[workerIndex] = true
 }
 
 func (c *Coordinator) maybeSendHeartbeats() {
@@ -87,14 +99,51 @@ func (c *Coordinator) NewWorkersAdded(workers []*labrpc.ClientEnd) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.workers = append(c.workers, workers...)
-
 	// TODO: rather than just adding a new region, check if there's a worker that is handling multiple regions first
 	for i := 0; i < len(workers); i++ {
 		c.regionToWorkerMap[c.nRegions+i] = c.nRegions + 1
 		c.lastHeartbeats = append(c.lastHeartbeats, time.Now())
+		c.isConnectedWorker[len(c.workers)+i] = true
 	}
 	c.nRegions += len(workers)
+
+	c.workers = append(c.workers, workers...)
+}
+
+// Generate a random connected worker
+func (c *Coordinator) randomConnectedWorker() int {
+	for i := 0; i < len(c.workers); i++ {
+		w := rand.Intn(len(c.workers))
+		if c.isConnectedWorker[w] {
+			return w
+		}
+	}
+	log.Println("Could not get a random connected worker")
+	return -1
+}
+
+func (c *Coordinator) WorkerCrashed(i int) {
+	c.isConnectedWorker[i] = false
+
+	regionsReassigned := make(map[int]bool, c.nRegions)
+	// Reassign regions that were assigned to worker i
+	for region, worker := range c.regionToWorkerMap {
+		if worker == i {
+			newWorker := c.randomConnectedWorker()
+			c.regionToWorkerMap[region] = newWorker
+			regionsReassigned[region] = true
+		}
+	}
+
+	// Reassign players that were assigned to reassigned regions
+	for username, region := range c.playerToRegionMap {
+		if regionsReassigned[region] {
+			newWorker := c.regionToWorkerMap[region]
+			args := WorkerReassignmentArgs{Worker: newWorker}
+			reply := WorkerReassignmentReply{}
+			go c.players[username].Call("Player.WorkerReassignment", &args, &reply)
+		}
+	}
 }
 
 //
@@ -121,6 +170,7 @@ func (c *Coordinator) killed() bool {
 	z := atomic.LoadInt32(&c.dead)
 	return z == 1
 }
+
 func (c *Coordinator) run() {
 	// main loop
 	for !c.killed() {
@@ -148,8 +198,11 @@ func MakeCoordinator(workers []*labrpc.ClientEnd, regions int) *Coordinator {
 	c.workers = workers
 	c.SelectBackup()
 	c.lastHeartbeats = make([]time.Time, len(c.workers))
-	// Initialize all last heartbeats to current time.
+	c.isConnectedWorker = make(map[int]bool, len(c.workers))
+
+	// Initialize all workers to be connected and set last heartbeats to current time.
 	for i := 0; i < len(c.workers); i++ {
+		c.isConnectedWorker[i] = true
 		c.lastHeartbeats[i] = time.Now()
 	}
 

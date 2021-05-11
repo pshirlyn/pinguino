@@ -41,6 +41,14 @@ type HeartbeatReply struct {
 	DisconnectedPlayers []string
 }
 
+type WorkerReassignmentArgs struct {
+	Worker int
+}
+
+type WorkerReassignmentReply struct {
+	Success bool
+}
+
 type AssignPlayerToRegionArgs struct {
 	Username string
 }

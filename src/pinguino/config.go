@@ -337,10 +337,12 @@ func (cfg *config) startPlayer(username string) *Player {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
 
+	servername := len(cfg.players) + 100
+
 	// Create an endname and end for Coordinator --> Player
 	cEndname := randstring(20)
 	cEnd := cfg.net.MakeEnd(cEndname)
-	cfg.net.Connect(cEndname, len(cfg.players)+100)
+	cfg.net.Connect(cEndname, servername)
 	cfg.net.Enable(cEndname, true)
 	cfg.coordinator.NewPlayerAdded(username, cEnd)
 
@@ -361,6 +363,12 @@ func (cfg *config) startPlayer(username string) *Player {
 	workerEnds := ends[1:]
 
 	player := MakePlayer(coordinatorEnd, workerEnds, username)
+
+	svc := labrpc.MakeService(player)
+	srv := labrpc.MakeServer()
+	srv.AddService(svc)
+	cfg.net.AddServer(servername, srv)
+
 	cfg.players = append(cfg.players, player)
 	return player
 }
