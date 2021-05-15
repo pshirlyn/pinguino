@@ -15,6 +15,14 @@ type SendReplicaReply struct {
 	Success bool
 }
 
+type SetReplicasArgs struct {
+	Replicas []int
+}
+
+type SetReplicasReply struct {
+	Success bool
+}
+
 type StableMoveArgs struct {
 	Command MoveCommand
 }

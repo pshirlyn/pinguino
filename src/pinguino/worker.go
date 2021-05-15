@@ -129,8 +129,11 @@ func (wk *Worker) sendToReplicas() {
 	}
 }
 
-func (wk *Worker) SetReplicas(replicas []int) {
+func (wk *Worker) SetReplicas(args *SetReplicasArgs, reply *SetReplicasReply) {
+	wk.mu.Lock()
+	replicas := args.Replicas
 	wk.replicas = replicas
+	wk.mu.Unlock()
 	wk.sendToReplicas()
 }
 

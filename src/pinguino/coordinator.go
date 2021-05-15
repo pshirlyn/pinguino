@@ -21,6 +21,7 @@ type Coordinator struct {
 	nRegions          int
 	players           map[string]*labrpc.ClientEnd
 	workers           []*labrpc.ClientEnd
+	workerReplicas    map[int][]int // index by worker, list of replicas for workers
 	isConnectedWorker map[int]bool
 
 	lastHeartbeats    []time.Time
@@ -185,6 +186,29 @@ func (c *Coordinator) SelectBackup() {
 	c.backup = idx
 }
 
+func (c *Coordinator) SelectWorkerReplicas() {
+	connectedWorkers := make([]int, 0)
+	replicas := make(map[int][]int)
+	for i, connected := range c.isConnectedWorker {
+		if connected {
+			connectedWorkers = append(connectedWorkers, i)
+		}
+	}
+
+	for i, worker := range connectedWorkers {
+		replicas[worker] = make([]int, 0)
+		right := (i + 1) % len(connectedWorkers)
+		left := (i + len(connectedWorkers) - 1) % len(connectedWorkers)
+		replicas[worker] = append(replicas[worker], right, left)
+
+		args := SetReplicasArgs{replicas[worker]}
+		reply := SetReplicasReply{}
+		c.workers[worker].Call("Worker.Heartbeat", args, reply)
+	}
+
+	c.workerReplicas = replicas
+}
+
 func MakeCoordinator(workers []*labrpc.ClientEnd, regions int) *Coordinator {
 	c := &Coordinator{}
 
@@ -197,6 +221,7 @@ func MakeCoordinator(workers []*labrpc.ClientEnd, regions int) *Coordinator {
 	c.players = make(map[string]*labrpc.ClientEnd)
 	c.workers = workers
 	c.SelectBackup()
+	c.SelectWorkerReplicas()
 	c.lastHeartbeats = make([]time.Time, len(c.workers))
 	c.isConnectedWorker = make(map[int]bool, len(c.workers))
 

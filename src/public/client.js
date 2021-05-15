@@ -36,6 +36,11 @@ Session.prototype.openSocket = function () {
     this.socket = new WebSocket(url.href);
 };
 
+Session.prototype.onmessage = function(msg) {
+    console.log("received: ", msg);
+    this.sendMessage("client replies hello!");
+}
+
 Session.prototype.connect = function () {
     const session = this;
     this.openSocket();
@@ -50,25 +55,19 @@ Session.prototype.connect = function () {
         session.reportClose();
     });
     this.socket.addEventListener('message', function (ev) {
+        console.log("received message", ev.data);
         if (session.onmessage !== null) {
-            session.onmessage(JSON.parse(ev.data));
+            session.onmessage(ev.data);
+        } else {
+            session.sendMessage("client replies hello!");
         }
+        
     });
     this.socket.addEventListener('close', function () {
         console.log("connection terminated");
         session.reportClose();
     });
 };
-
-Session.prototype.onmessage = function(msg) {
-    console.log("received: ", msg);
-    this.sendMessage("client replies hello!");
-
-}
-
-
-// Session.openSocket();
-
 
 function Canvas(canvas) {
     this.canvas = canvas;
@@ -131,8 +130,5 @@ function DOMloaded() {
         msg.value = "";
         return false;
     };
-
-    // while (!session.openSocket) {}
-    // session.sendMessage("hello from client init");
 }
 
