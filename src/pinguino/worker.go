@@ -18,7 +18,9 @@ type MoveCommand struct {
 }
 
 type Replica struct {
-	Data []byte
+	Data      []byte
+	Moves     []*MoveCommand
+	MoveIndex int
 }
 
 type Worker struct {
@@ -28,7 +30,6 @@ type Worker struct {
 	me            int
 	replicas      []int
 	localReplicas map[int]*Replica
-	// replicaStates []*[]*PlayerState
 
 	moveIndex int
 	log       []*MoveCommand
@@ -41,6 +42,8 @@ type Worker struct {
 func (wk *Worker) StableMove(args *StableMoveArgs, reply *StableMoveReply) {
 	wk.mu.Lock()
 	wk.log = append(wk.log, &args.Command)
+
+	
 	reply.Success = true
 	wk.moveIndex++
 	wk.mu.Unlock()
@@ -96,10 +99,54 @@ func (wk *Worker) killed() bool {
 	return z == 1
 }
 
+func (wk *Worker) sendMoveToReplica(replica int, move *MoveCommand) {
+	args := SendReplicaArgs{}
+	args.Worker = wk.me
+	args.MoveIndex = wk.moveIndex
+	args.Move = *move
+
+	reply := SendReplicaReply{}
+
+	ok := false
+	for i := 0; i < 10; i++ {
+		wk.peers[replica].Call("Worker.SendReplica", &args, &reply)
+		if ok && reply.Success {
+			break
+		}
+	}
+
+}
+
 func (wk *Worker) SendReplica(args *SendReplicaArgs, reply *SendReplicaReply) {
 	wk.mu.Lock()
-	wk.localReplicas[args.Worker] = &Replica{args.Replica}
-	wk.mu.Unlock()
+	defer wk.mu.Unlock()
+
+	if oldReplica, ok := wk.localReplicas[args.Worker]; ok {
+		if args.MoveIndex < oldReplica.MoveIndex {
+			return // outdated replica sent
+		}
+
+		if args.Replica != nil {
+			oldReplica.Data = args.Replica
+		}
+
+		if args.Move.Command != nil {
+			oldReplica.Moves = append(oldReplica.Moves, &args.Move)
+		}
+	}
+
+	replica := Replica{}
+
+	if args.Replica != nil {
+		replica.Data = args.Replica
+	}
+
+	if args.Move.Command != nil {
+		replica.Moves = append(replica.Moves, &args.Move)
+	}
+
+	wk.localReplicas[args.Worker] = &replica
+
 }
 
 func (wk *Worker) getSnapshot() []byte {
@@ -118,6 +165,7 @@ func (wk *Worker) sendUpdateReplica(replica int) {
 	args.Replica = wk.getSnapshot()
 	args.Worker = wk.me
 	args.MoveIndex = wk.moveIndex
+
 	reply := SendReplicaReply{}
 	wk.peers[replica].Call("Worker.SendReplica", &args, &reply)
 
@@ -127,6 +175,10 @@ func (wk *Worker) sendToReplicas() {
 	for replica := range wk.replicas {
 		go wk.sendUpdateReplica(replica)
 	}
+
+	wk.mu.Lock()
+	wk.log = make([]*MoveCommand, 0)
+	wk.mu.Unlock()
 }
 
 func (wk *Worker) SetReplicas(args *SetReplicasArgs, reply *SetReplicasReply) {

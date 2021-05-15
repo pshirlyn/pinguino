@@ -7,6 +7,7 @@ import (
 
 type SendReplicaArgs struct {
 	Replica   []byte
+	Move      MoveCommand
 	Worker    int
 	MoveIndex int
 }
