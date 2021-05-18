@@ -4,8 +4,6 @@ document.addEventListener('DOMContentLoaded', DOMloaded, false);
 
 function Session() {
     this.socket = null;
-    this.onmessage = null;
-    this.onclose = null;
     this.socketOpen = false;
     this.terminated = false;
 }
@@ -14,6 +12,10 @@ Session.prototype.sendMessage = function (jsonobject) {
     if (this.socketOpen) {
         this.socket.send(JSON.stringify(jsonobject));
     }
+};
+
+Session.prototype.onclose = function () {
+    console.log("socket closed!");
 };
 
 Session.prototype.reportClose = function () {
@@ -36,10 +38,10 @@ Session.prototype.openSocket = function () {
     this.socket = new WebSocket(url.href);
 };
 
-Session.prototype.onmessage = function(msg) {
+Session.prototype.onMessage = function(msg) {
     console.log("received: ", msg);
-    this.sendMessage("client replies hello!");
-}
+    // this.sendMessage("client replies hello!");
+};
 
 Session.prototype.connect = function () {
     const session = this;
@@ -55,12 +57,8 @@ Session.prototype.connect = function () {
         session.reportClose();
     });
     this.socket.addEventListener('message', function (ev) {
-        console.log("received message", ev.data);
-        if (session.onmessage !== null) {
-            session.onmessage(ev.data);
-        } else {
-            session.sendMessage("client replies hello!");
-        }
+        console.log("client received message", ev.data);
+        session.onMessage(ev.data);
         
     });
     this.socket.addEventListener('close', function () {
