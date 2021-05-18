@@ -8,14 +8,23 @@
 <body>
 <div>
     <div>Welcome to Pinguino!</div>
-    <canvas id="main-canvas">
-        This interface requires canvas support. Consider upgrading your web browser.
-    </canvas>
-    <div id="log"></div>
-    <form id="form">
-        <input type="submit" value="Send" />
-        <input type="text" id="msg" size="64" autofocus />
-    </form>
+    <div class="main-container">
+        <div id="display-column">
+            <canvas id="main-canvas" width="640" height="640">
+                This interface requires canvas support. Consider upgrading your web browser.
+            </canvas>
+        </div>
+        <div id="chatbox">
+            <div id="log"></div>
+            <form id="form">
+                <input type="submit" value="Send" />
+                <input type="text" id="msg" size="64" autofocus />
+            </form>
+        </div>
+    </div>
+    
 </div>
+
+<img id="myImage" src="penguin.png" style="display:none;">
 </body>
 </html>

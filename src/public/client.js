@@ -69,14 +69,14 @@ Session.prototype.connect = function () {
 
 function Canvas(canvas) {
     this.canvas = canvas;
-    this.viewWidth = this.viewHeight = 100;
-    this.width = this.height = 100;
+    this.viewWidth = this.viewHeight = 600;
+    this.width = this.height = 600;
     this.gameSprites = [];
 }
 
 Canvas.prototype.testDraw = function() {
     this.canvas.moveTo(0, 0);
-    this.canvas.lineTo(200, 100);
+    this.canvas.lineTo(600, 600);
     this.canvas.stroke();
 }
 
@@ -104,6 +104,10 @@ function DOMloaded() {
     var canvas = new Canvas(ctx);
     canvas.testDraw()
 
+    let img = document.getElementById("myImage");
+    ctx.drawImage(img, 300, 300, 64, 64);
+    canvas.updateSprites([img]);
+
     var msg = document.getElementById("msg");
     var log = document.getElementById("log");
 
@@ -125,6 +129,10 @@ function DOMloaded() {
         }
         
         session.sendMessage(msg.value);
+
+        var item = document.createElement("div");
+        item.innerText = "You: " + msg.value;
+        appendLog(item)
         msg.value = "";
         return false;
     };
