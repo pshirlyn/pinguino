@@ -127,9 +127,9 @@ function DOMloaded() {
         canvas.moveMe(300, 300);
 
         c.addEventListener('click', function(event) {
-            let { x, y } = canvas.getMousePosition(event);
+            let {x, y} = canvas.getMousePosition(event);
             console.log("clicked", x, y);
-            canvas.moveMe(x, y); // not working :(
+            canvas.moveMe(x, y);
         });
 
     }
