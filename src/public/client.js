@@ -67,18 +67,27 @@ Session.prototype.connect = function () {
     });
 };
 
-function Canvas(canvas) {
+function Canvas(canvas, ctx, me) {
     this.canvas = canvas;
+    this.ctx = ctx;
     this.viewWidth = this.viewHeight = 600;
     this.width = this.height = 600;
     this.gameSprites = [];
+    this.me = me;
 }
 
 Canvas.prototype.testDraw = function() {
-    this.canvas.moveTo(0, 0);
-    this.canvas.lineTo(600, 600);
-    this.canvas.stroke();
-}
+    this.ctx.moveTo(0, 0);
+    this.ctx.lineTo(600, 600);
+    this.ctx.stroke();
+};
+
+Canvas.prototype.moveSprite = function() {
+    this.ctx.moveTo(0, 0);
+    this.ctx.lineTo(600, 600);
+    this.ctx.stroke();
+};
+
 
 Canvas.prototype.updateSprites = function (sprites) {
     this.gameSprites = sprites;
@@ -91,6 +100,12 @@ Canvas.prototype.getMousePosition = function (ev) {
     return {x: x, y: y};
 };
 
+Canvas.prototype.moveMe = function(x, y) {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.drawImage(this.me, x, y, 64, 64);
+    console.log("drawing");
+}
+
 
 function DOMloaded() {
 
@@ -99,14 +114,25 @@ function DOMloaded() {
     
 
     var c = document.getElementById("main-canvas");
-    var ctx = c.getContext("2d");
     
-    var canvas = new Canvas(ctx);
-    canvas.testDraw()
+    var ctx = c.getContext("2d");
 
-    let img = document.getElementById("myImage");
-    ctx.drawImage(img, 300, 300, 64, 64);
-    canvas.updateSprites([img]);
+
+    let img = new Image();
+    img.onload = function () {
+        var canvas = new Canvas(c, ctx, img);
+        canvas.moveMe(300, 300);
+
+        c.addEventListener('click', function(event) {
+            let x, y = canvas.getMousePosition(event);
+            console.log("clicked", x, y);
+            canvas.moveMe(x, y); // not working :(
+        });
+
+    }
+
+    img.src = "penguin.png";    
+    
 
     var msg = document.getElementById("msg");
     var log = document.getElementById("log");
