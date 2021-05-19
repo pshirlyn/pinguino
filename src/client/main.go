@@ -71,7 +71,6 @@ func setupRoutes() {
 
 func main() {
 	framework, player := backend.Setup()
-	backend.Setup()
 	setupRoutes()
 	println("Launching pinguino client... visit http://localhost:8080/")
 	log.Fatal(http.ListenAndServe(":8080", nil))
