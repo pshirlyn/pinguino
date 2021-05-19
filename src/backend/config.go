@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"pinguino/src/labrpc"
+	"pinguino/src/backend/labrpc"
 
 	crand "crypto/rand"
 	"encoding/base64"

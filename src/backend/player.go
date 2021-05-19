@@ -3,8 +3,8 @@ package pinguino
 import (
 	"fmt"
 	"log"
-	"pinguino/src/labgob"
-	"pinguino/src/labrpc"
+	"pinguino/src/backend/labgob"
+	"pinguino/src/backend/labrpc"
 	"sync"
 	"sync/atomic"
 	"time"

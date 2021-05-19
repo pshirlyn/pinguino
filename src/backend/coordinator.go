@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
-	"pinguino/src/labrpc"
+	"pinguino/src/backend/labrpc"
 	"sync"
 	"sync/atomic"
 	"time"

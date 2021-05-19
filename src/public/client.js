@@ -11,11 +11,14 @@ function Session() {
 Session.prototype.sendMessage = function (jsonobject) {
     if (this.socketOpen) {
         this.socket.send(JSON.stringify(jsonobject));
+    } else {
+        console.log("Socket is closed, could not send");
     }
 };
 
 Session.prototype.onclose = function () {
     console.log("socket closed!");
+    this.socketOpen = false;
 };
 
 Session.prototype.reportClose = function () {
@@ -124,7 +127,7 @@ function DOMloaded() {
         canvas.moveMe(300, 300);
 
         c.addEventListener('click', function(event) {
-            let x, y = canvas.getMousePosition(event);
+            let { x, y } = canvas.getMousePosition(event);
             console.log("clicked", x, y);
             canvas.moveMe(x, y); // not working :(
         });

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/rpc"
-	"pinguino/src/labgob"
-	"pinguino/src/labrpc"
+	"pinguino/src/backend/labgob"
+	"pinguino/src/backend/labrpc"
 	"sync"
 	"sync/atomic"
 )
@@ -43,7 +43,6 @@ func (wk *Worker) StableMove(args *StableMoveArgs, reply *StableMoveReply) {
 	wk.mu.Lock()
 	wk.log = append(wk.log, &args.Command)
 
-	
 	reply.Success = true
 	wk.moveIndex++
 	wk.mu.Unlock()

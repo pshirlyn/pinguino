@@ -8,6 +8,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type ClientHub struct {
+	player Player
+}
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
