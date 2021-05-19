@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"pinguino/src/backend"
 
 	"github.com/gorilla/websocket"
 )
 
 type ClientHub struct {
-	player Player
+	// player Player
 }
 
 var upgrader = websocket.Upgrader{
@@ -69,6 +70,8 @@ func setupRoutes() {
 }
 
 func main() {
+	// framework, player := backend.Setup()
+	backend.Setup()
 	setupRoutes()
 	println("Launching pinguino client... visit http://localhost:8080/")
 	log.Fatal(http.ListenAndServe(":8080", nil))
