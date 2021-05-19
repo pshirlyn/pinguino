@@ -1,4 +1,4 @@
-package pinguino
+package backend
 
 import (
 	"fmt"
