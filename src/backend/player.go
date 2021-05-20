@@ -1,4 +1,4 @@
-package backend
+package pinguino
 
 import (
 	"fmt"
@@ -169,14 +169,14 @@ func MakePlayer(coordinator *labrpc.ClientEnd, servers []*labrpc.ClientEnd, user
 /////
 
 type Move struct {
-	X        int
-	Y        int
-	Username string
+	X        int    `json:"x"`
+	Y        int    `json:"y"`
+	Username string `json:"username"`
 }
 
 type ChatMessage struct {
-	Message  string
-	Username string
+	Message  string `json:"message"`
+	Username string `json:"username"`
 }
 
 func newMove(x int, y int, username string) *Move {
@@ -198,6 +198,7 @@ func (pl *Player) ClientMovePlayer(x int, y int) {
 	playerMove := newMove(x, y, pl.username)
 
 	pl.sendFastMove(playerMove) // handle reply
+	log.Println(pl.username, "moving player")
 
 	pl.mu.Lock()
 	pl.state.x = x
@@ -214,6 +215,8 @@ func (pl *Player) initialize() { // don't hold lock
 
 func (pl *Player) SendChatMessage(message string) {
 	chatMessage := newChatMessage(message, pl.username)
+
+	log.Println(pl.username, "sending chat message")
 
 	pl.sendStableMove(chatMessage)
 }

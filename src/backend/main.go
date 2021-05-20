@@ -1,4 +1,4 @@
-package backend
+package pinguino
 
 type Framework struct {
 	cfg         *config

@@ -60,7 +60,6 @@ Session.prototype.connect = function () {
         session.reportClose();
     });
     this.socket.addEventListener('message', function (ev) {
-        console.log("client received message", ev.data);
         session.onMessage(ev.data);
         
     });
@@ -70,13 +69,14 @@ Session.prototype.connect = function () {
     });
 };
 
-function Canvas(canvas, ctx, me) {
+function Canvas(canvas, ctx, me, session) {
     this.canvas = canvas;
     this.ctx = ctx;
     this.viewWidth = this.viewHeight = 600;
     this.width = this.height = 600;
     this.gameSprites = [];
     this.me = me;
+    this.session = session;
 }
 
 Canvas.prototype.testDraw = function() {
@@ -106,7 +106,8 @@ Canvas.prototype.getMousePosition = function (ev) {
 Canvas.prototype.moveMe = function(x, y) {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.ctx.drawImage(this.me, x, y, 64, 64);
-    console.log("drawing");
+    
+    this.session.sendMessage({"control": "Move", "X": {"x": parseInt(x), "y": parseInt(y)}});
 }
 
 
@@ -123,7 +124,7 @@ function DOMloaded() {
 
     let img = new Image();
     img.onload = function () {
-        var canvas = new Canvas(c, ctx, img);
+        var canvas = new Canvas(c, ctx, img, session);
         canvas.moveMe(300, 300);
 
         c.addEventListener('click', function(event) {
@@ -157,7 +158,7 @@ function DOMloaded() {
             return false;
         }
         
-        session.sendMessage(msg.value);
+        session.sendMessage({"control": "ChatMessage", "X": {"message": msg.value}});
 
         var item = document.createElement("div");
         item.innerText = "You: " + msg.value;
