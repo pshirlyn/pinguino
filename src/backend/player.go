@@ -53,6 +53,8 @@ func (pl *Player) sendStableMove(move interface{}) {
 		time.Sleep(10 * time.Millisecond) // wait until player is assigned
 	}
 
+	log.Println("Sending stable move")
+
 	ok := false
 	for i := 0; i < 10; i++ {
 		ok = pl.servers[pl.serverIndex].Call("Worker.StableMove", &args, &reply)
@@ -72,7 +74,7 @@ func (pl *Player) sendFastMove(move interface{}) {
 		time.Sleep(10 * time.Millisecond) // wait until player is assigned
 	}
 
-	log.Println("sending fast move")
+	log.Println("Sending fast move")
 
 	ok := false
 	// TOOD: handle result of call
@@ -198,7 +200,6 @@ func (pl *Player) ClientMovePlayer(x int, y int) {
 	playerMove := newMove(x, y, pl.username)
 
 	pl.sendFastMove(playerMove) // handle reply
-	log.Println(pl.username, "moving player")
 
 	pl.mu.Lock()
 	pl.state.x = x

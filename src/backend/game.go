@@ -34,14 +34,14 @@ func (g *Game) processMove(command Move, username string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.playerState[username] = &PlayerState{command.X, command.Y}
-	log.Printf("Player %s moved to (%d, %d)", username, command.X, command.Y)
+	log.Printf("Game Server: Player %s moved to (%d, %d)", username, command.X, command.Y)
 }
 
 func (g *Game) processChatMessage(msg ChatMessage, username string) {
 	g.mu.Lock()
 	g.chatLog = append(g.chatLog, &msg)
 	g.mu.Unlock()
-	log.Printf("Player %s typed: %s", msg.Username, msg.Message)
+	log.Printf("Game Server: Player %s typed: %s", msg.Username, msg.Message)
 }
 
 func (g *Game) handleMessage(move MoveCommand) {
